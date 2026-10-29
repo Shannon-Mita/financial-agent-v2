@@ -1,0 +1,126 @@
+/* Mobile-first, minimal. Partner uses this on her phone — single column,
+   full-width tap targets, no table layout (tables don't reflow on a small
+   screen). Works fine on a laptop too; it just doesn't try to use the
+   extra width for anything clever. */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0.75rem;
+  max-width: 480px;
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+
+h1 { font-size: 1.3rem; margin: 0.5rem 0 1rem; }
+h2 { font-size: 1.1rem; margin: 1rem 0 0.5rem; }
+
+a { color: #0a5; text-decoration: none; }
+
+nav {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #ddd;
+}
+nav a { font-weight: 600; }
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.card.sub { margin-left: 1rem; border-left: 3px solid #0a5; }
+
+.card-title { font-weight: 600; font-size: 1.05rem; margin-bottom: 0.25rem; }
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  font-size: 0.95rem;
+}
+.row .label { color: #555; }
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #eee;
+  color: #444;
+}
+.badge.stale { background: #fff3cd; color: #7a5b00; }
+.badge.done { background: #d9f2e3; color: #0a5; }
+.badge.locked { background: #eee; color: #777; }
+.badge.short { background: #fde2e1; color: #a12; }
+.badge.on-track { background: #d9f2e3; color: #0a5; }
+
+.caveat {
+  font-size: 0.8rem;
+  color: #777;
+  margin-top: 0.35rem;
+}
+
+.task {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+.task label { flex: 1; }
+.task.done label { text-decoration: line-through; color: #999; }
+
+form.inline { display: inline; }
+
+input[type="text"], input[type="number"], input[type="date"], select, textarea {
+  width: 100%;
+  font-size: 1rem;
+  padding: 0.5rem;
+  margin: 0.25rem 0 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+label.field-label { font-weight: 600; font-size: 0.9rem; display: block; margin-top: 0.5rem; }
+
+button, input[type="submit"] {
+  font-size: 1rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 6px;
+  border: none;
+  background: #0a5;
+  color: #fff;
+  cursor: pointer;
+}
+button.secondary { background: #eee; color: #333; }
+button.danger { background: #c0392b; }
+button.small { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
+
+fieldset { border: 1px solid #ddd; border-radius: 8px; margin: 0.5rem 0 1rem; padding: 0.5rem 0.75rem; }
+legend { font-weight: 600; font-size: 0.9rem; padding: 0 0.3rem; }
+
+.readonly-note { font-style: italic; color: #888; font-size: 0.9rem; }
+
+table { width: 100%; border-collapse: collapse; }
+table th, table td { text-align: left; padding: 0.4rem; border-bottom: 1px solid #eee; font-size: 0.85rem; }
+
+@media (min-width: 540px) {
+  body { padding: 1.5rem; }
+}

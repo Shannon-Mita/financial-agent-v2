@@ -59,6 +59,15 @@ CREATABLE_FACT_KEYS = frozenset({
 })
 
 
+# Fact keys a goal's `source_fact_key` / `target_date_fact_key` may point at
+# (goal create/edit forms). Curated, not freeform — the whole point of
+# fact-backing a goal's target is to point at a SPECIFIC known number
+# (the FIRE target), not let the owner wire up any arbitrary fact. Extend
+# this set, don't bypass it, if another fact-backed goal is approved.
+FACT_BACKED_TARGET_VALUE_KEYS = frozenset({"goals.fire.target_number"})
+FACT_BACKED_TARGET_DATE_KEYS = frozenset({"goals.fire.target_date"})
+
+
 def can_create_fact(role: str, key: str) -> bool:
     """Creating a brand-new fact row is owner-only regardless of which
     `owner` the key will end up tagged with once written (e.g.

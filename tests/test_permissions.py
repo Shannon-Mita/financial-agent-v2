@@ -260,6 +260,63 @@ def test_unknown_role_cannot_create():
     assert not can_create_fact("someone-else", "goals.fire.target_date")
 
 
+# ── Stage 1: create-if-missing wired to the real /facts/<key>/update route ─
+
+def test_http_owner_can_create_a_registered_missing_key(client, pg_conn, owner_user_id):
+    import re
+
+    from app.store import PostgresFactStore
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_user_id)
+    page = client.get("/")
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page.data.decode()).group(1)
+
+    resp = client.post(
+        "/facts/goals.fire.target_date/update",
+        data={"value": "2030-10-05", "csrf_token": token},
+    )
+    assert resp.status_code == 204
+    store = PostgresFactStore(pg_conn)
+    assert store.get("goals.fire.target_date").value == "2030-10-05"
+
+
+def test_http_member_gets_403_creating_a_registered_missing_key(client, pg_conn, member_user_id):
+    import re
+
+    from app.store import PostgresFactStore
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(member_user_id)
+    page = client.get("/")
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page.data.decode()).group(1)
+
+    resp = client.post(
+        "/facts/savings.house_deposit.balance/update",
+        data={"value": "5000", "csrf_token": token},
+    )
+    assert resp.status_code == 403
+    store = PostgresFactStore(pg_conn)
+    assert store.get("savings.house_deposit.balance") is None
+
+
+def test_http_unknown_key_rejected_even_for_owner(client, pg_conn, owner_user_id):
+    """An unregistered key is 404, not 403 — it isn't a thing that can be
+    brought into existence via this endpoint, regardless of role."""
+    import re
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_user_id)
+    page = client.get("/")
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page.data.decode()).group(1)
+
+    resp = client.post(
+        "/facts/some.made.up.key/update",
+        data={"value": "1", "csrf_token": token},
+    )
+    assert resp.status_code == 404
+
+
 # ── Stage 1: tasks ───────────────────────────────────────────────────────
 
 def test_owner_can_create_any_task():

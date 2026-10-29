@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Financial Agent{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <nav>
+    <a href="{{ url_for('routes.dashboard') }}">Numbers</a>
+    <a href="{{ url_for('routes.goals_list') }}">Goals</a>
+  </nav>
+  <div class="topbar">
+    <span>{{ user.email }} ({{ user.role }})</span>
+    <form method="post" action="{{ url_for('auth.logout') }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="secondary small">Sign out</button>
+    </form>
+  </div>
+  {% block content %}{% endblock %}
+</body>
+</html>

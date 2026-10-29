@@ -1,48 +1,35 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Financial Agent V2</title>
-</head>
-<body>
+{% extends "base.html" %}
+{% block title %}Household numbers{% endblock %}
+{% block content %}
   <h1>Household numbers</h1>
-  <p>Signed in as {{ user.email }} ({{ user.role }})
-    &mdash; <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit">Sign out</button>
-    </form>
-  </p>
 
-  <table border="1" cellpadding="6">
-    <tr>
-      <th>Key</th><th>Value</th><th>Unit</th><th>Owner</th>
-      <th>As of</th><th>Freshness</th><th>Action</th>
-    </tr>
-    {% for row in rows %}
-    <tr>
-      <td>{{ row.key }}{% if row.protected %} &#128274;{% endif %}</td>
-      <td>{{ row.value }}</td>
-      <td>{{ row.unit }}</td>
-      <td>{{ row.owner }}</td>
-      <td>{{ row.as_of }}</td>
-      <td>{{ "STALE" if row.stale else "fresh" }}</td>
-      <td>
-        {% if row.can_edit %}
-        <form method="post" action="{{ url_for('routes.confirm_fact', key=row.key) }}" style="display:inline">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit">Confirm</button>
-        </form>
-        <form method="post" action="{{ url_for('routes.update_fact', key=row.key) }}" style="display:inline">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="text" name="value" size="10">
-          <button type="submit">Update</button>
-        </form>
-        {% else %}
-        <em>read-only</em>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-</body>
-</html>
+  {% for row in rows %}
+  <div class="card">
+    <div class="card-title">
+      {{ row.key }}{% if row.protected %} &#128274;{% endif %}
+    </div>
+    <div class="row"><span class="label">Value</span><span>{{ row.value }} {{ row.unit }}</span></div>
+    <div class="row"><span class="label">Owner</span><span>{{ row.owner }}</span></div>
+    <div class="row">
+      <span class="label">As of</span>
+      <span>
+        {{ row.as_of }}
+        {% if row.stale %}<span class="badge stale">stale</span>{% else %}<span class="badge">fresh</span>{% endif %}
+      </span>
+    </div>
+    {% if row.can_edit %}
+    <form method="post" action="{{ url_for('routes.confirm_fact', key=row.key) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="small">Confirm still correct</button>
+    </form>
+    <form method="post" action="{{ url_for('routes.update_fact', key=row.key) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="text" name="value" placeholder="New value" style="width:auto; display:inline-block; margin:0 0.3rem;">
+      <button type="submit" class="small secondary">Update</button>
+    </form>
+    {% else %}
+    <p class="readonly-note">Read-only</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% endblock %}

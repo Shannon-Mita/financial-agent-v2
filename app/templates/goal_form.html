@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit goal" if goal else "New goal" }}{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('routes.goals_list') }}">&larr; All goals</a></p>
+  <h1>{{ "Edit goal" if goal else "New goal" }}</h1>
+
+  <form method="post" action="{{ url_for('routes.update_goal', goal_id=goal.id) if goal else url_for('routes.create_goal') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="field-label">Title</label>
+    <input type="text" name="title" value="{{ goal.title if goal else '' }}" required>
+
+    <label class="field-label">Type</label>
+    <select name="type">
+      <option value="target" {% if goal and goal.type == "target" %}selected{% endif %}>Target (number by a date)</option>
+      <option value="binary" {% if goal and goal.type == "binary" %}selected{% endif %}>Binary (done / not done)</option>
+      <option value="habit" {% if goal and goal.type == "habit" %}selected{% endif %}>Habit (recurring)</option>
+    </select>
+
+    <fieldset>
+      <legend>Target amount — pick exactly one</legend>
+      <label><input type="radio" name="target_value_mode" value="amount"
+        {% if not goal or goal.source_fact_key is none %}checked{% endif %}> Enter an amount</label>
+      <input type="number" step="0.01" name="target_value" value="{{ goal.target_value if goal and goal.target_value is not none else '' }}">
+
+      <label><input type="radio" name="target_value_mode" value="fact"
+        {% if goal and goal.source_fact_key %}checked{% endif %}> Use a tracked figure</label>
+      <select name="source_fact_key">
+        <option value="">— choose —</option>
+        {% for k in fact_value_keys %}
+        <option value="{{ k }}" {% if goal and goal.source_fact_key == k %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+      </select>
+    </fieldset>
+
+    <fieldset>
+      <legend>Target date — pick exactly one</legend>
+      <label><input type="radio" name="target_date_mode" value="date"
+        {% if not goal or goal.target_date_fact_key is none %}checked{% endif %}> Enter a date</label>
+      <input type="date" name="target_date" value="{{ goal.target_date.isoformat() if goal and goal.target_date else '' }}">
+
+      <label><input type="radio" name="target_date_mode" value="fact"
+        {% if goal and goal.target_date_fact_key %}checked{% endif %}> Use a tracked date</label>
+      <select name="target_date_fact_key">
+        <option value="">— choose —</option>
+        {% for k in fact_date_keys %}
+        <option value="{{ k }}" {% if goal and goal.target_date_fact_key == k %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+      </select>
+    </fieldset>
+
+    <fieldset>
+      <legend>Habit cadence (only used for Habit goals)</legend>
+      <label class="field-label">Period</label>
+      <select name="cadence_period">
+        <option value="">—</option>
+        <option value="weekly" {% if goal and goal.cadence_period == "weekly" %}selected{% endif %}>Weekly</option>
+        <option value="monthly" {% if goal and goal.cadence_period == "monthly" %}selected{% endif %}>Monthly</option>
+      </select>
+      <label class="field-label">Amount (optional)</label>
+      <input type="number" step="0.01" name="cadence_amount" value="{{ goal.cadence_amount if goal and goal.cadence_amount is not none else '' }}">
+    </fieldset>
+
+    <label class="field-label">Progress fact keys (comma-separated, must already exist in Numbers)</label>
+    <input type="text" name="progress_fact_keys" value="{{ (goal.progress_fact_keys or []) | join(', ') if goal else '' }}"
+           placeholder="e.g. savings.house_deposit.balance">
+
+    <label class="field-label">Parent goal (optional — makes this a sub-goal)</label>
+    <select name="parent_id">
+      <option value="">— none —</option>
+      {% for g in goals %}
+      <option value="{{ g.id }}" {% if goal and goal.parent_id == g.id %}selected{% endif %}>{{ g.title }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="field-label">Assignees</label>
+    {% for u in users %}
+    <label>
+      <input type="checkbox" name="assignee_user_ids" value="{{ u.id }}"
+        {% if goal and u.id in goal.assignee_user_ids %}checked{% endif %}> {{ u.email }}
+    </label>
+    {% endfor %}
+
+    <button type="submit">{{ "Save changes" if goal else "Create goal" }}</button>
+  </form>
+{% endblock %}

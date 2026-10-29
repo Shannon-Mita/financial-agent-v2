@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Goals{% endblock %}
+{% block content %}
+  <h1>Goals</h1>
+
+  {% if user.role == "owner" %}
+  <a href="{{ url_for('routes.new_goal') }}"><button type="button">+ New goal</button></a>
+  {% endif %}
+
+  {% if fire_breakdown %}
+  <div class="card">
+    <div class="card-title">FIRE — accessible assets</div>
+    <div class="row"><span class="label">Accessible total (ISA + GIA + crypto)</span>
+      <span>£{{ "{:,.0f}".format(fire_breakdown.accessible_total) }}</span></div>
+    {% if fire_breakdown.target %}
+    <div class="row"><span class="label">Target</span>
+      <span>£{{ "{:,.0f}".format(fire_breakdown.target) }}</span></div>
+    {% endif %}
+    <div class="row"><span class="label">Pensions <span class="badge locked">locked</span></span>
+      <span>£{{ "{:,.0f}".format(fire_breakdown.pensions_total) }}</span></div>
+    <div class="row"><span class="label">Emergency savings</span>
+      <span>£{{ "{:,.0f}".format(fire_breakdown.emergency_savings or 0) }}</span></div>
+    <div class="row"><span class="label">House deposit pot</span>
+      <span>£{{ "{:,.0f}".format(fire_breakdown.house_deposit_balance or 0) }}</span></div>
+    {% if fire_breakdown.missing_keys %}
+    <p class="caveat">Missing: {{ fire_breakdown.missing_keys | join(", ") }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% macro goal_card(g, sub=False) %}
+  <div class="card{% if sub %} sub{% endif %}">
+    <div class="card-title">
+      <a href="{{ url_for('routes.goal_detail', goal_id=g.id) }}">{{ g.title }}</a>
+      {% if g.status == "done" %}<span class="badge done">done</span>{% endif %}
+    </div>
+    <div class="row"><span class="label">Type</span><span>{{ g.type }}</span></div>
+    {% if g.feasibility.applicable and not g.feasibility.refused %}
+    <div class="row">
+      <span class="label">Feasibility</span>
+      <span>
+        {% if g.feasibility.verdict == "on_track" %}<span class="badge on-track">on track</span>
+        {% elif g.feasibility.verdict == "short" %}<span class="badge short">short £{{ "{:,.0f}".format(g.feasibility.required_monthly - g.feasibility.surplus) }}/mo</span>
+        {% elif g.feasibility.verdict == "met" %}<span class="badge on-track">target met</span>
+        {% elif g.feasibility.verdict == "due_now" %}<span class="badge short">due now</span>
+        {% endif %}
+      </span>
+    </div>
+    {% elif g.feasibility.applicable and g.feasibility.refused %}
+    <p class="caveat">Can't compute — missing: {{ g.feasibility.missing_keys | join(", ") }}</p>
+    {% endif %}
+  </div>
+  {% for child in by_parent.get(g.id, []) %}
+    {{ goal_card(child, sub=True) }}
+  {% endfor %}
+  {% endmacro %}
+
+  {% for g in top_level_goals %}
+    {{ goal_card(g) }}
+  {% endfor %}
+
+  {% if not top_level_goals %}
+  <p class="readonly-note">No goals yet.</p>
+  {% endif %}
+
+  <h2>Tasks not tied to a goal</h2>
+  {% for t in standalone_tasks %}
+  <div class="card task{% if t.done %} done{% endif %}">
+    <form method="post" action="{{ url_for('routes.toggle_task', task_id=t.id) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('routes.goals_list') }}">
+      <button type="submit" class="small{% if t.done %} secondary{% endif %}">{{ "Undo" if t.done else "Done" }}</button>
+    </form>
+    <label>{{ t.title }}{% if t.assignee_user_id and users.get(t.assignee_user_id) %} — {{ users[t.assignee_user_id].email }}{% endif %}</label>
+    {% if t.created_by_user_id == user.id | int or user.role == "owner" %}
+    <form method="post" action="{{ url_for('routes.delete_task', task_id=t.id) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('routes.goals_list') }}">
+      <button type="submit" class="small danger">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if not standalone_tasks %}<p class="readonly-note">None.</p>{% endif %}
+
+  <div class="card">
+    <div class="card-title">Add a task</div>
+    <form method="post" action="{{ url_for('routes.create_task') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('routes.goals_list') }}">
+      <label class="field-label">Title</label>
+      <input type="text" name="title" required>
+      <label class="field-label">Assign to</label>
+      <select name="assignee_user_id">
+        {% if user.role == "owner" %}
+        <option value="">— unassigned —</option>
+        {% for uid, u in users.items() %}
+        <option value="{{ uid }}">{{ u.email }}</option>
+        {% endfor %}
+        {% else %}
+        <option value="{{ user.id }}" selected>{{ user.email }} (me)</option>
+        {% endif %}
+      </select>
+      <button type="submit">Add task</button>
+    </form>
+  </div>
+{% endblock %}
