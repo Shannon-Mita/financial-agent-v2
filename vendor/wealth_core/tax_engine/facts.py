@@ -18,6 +18,46 @@ relevant year before relying on any figure for a real decision.
 from dataclasses import dataclass, field
 
 
+class NotVerifiedForYear(Exception):
+    """Raised when a calculation tries to USE a TaxYear field that hasn't
+    been verified for that year yet (see NotVerified below)."""
+
+
+class NotVerified:
+    """Placeholder for a TaxYear field with no verified value for its year.
+
+    Mere assignment/storage is fine (that's how a TaxYear entry can be
+    constructed with some fields verified and others not); any attempt to
+    actually USE the value in a calculation — arithmetic, comparison,
+    numeric conversion, truthiness — raises NotVerifiedForYear immediately
+    with a clear message, instead of a calculation silently going ahead
+    with no value (or, worse, a stale figure quietly carried over from a
+    prior year).
+    """
+
+    def __init__(self, year: str, field_name: str):
+        self.year = year
+        self.field_name = field_name
+
+    def _raise(self, *_args, **_kwargs):
+        raise NotVerifiedForYear(
+            f"'{self.field_name}' is not verified for {self.year}. "
+            f"Verify the figure against GOV.UK/HMRC and set it on the "
+            f"{self.year} TaxYear entry before using it in a calculation."
+        )
+
+    def __repr__(self):
+        return f"<NotVerified: {self.field_name} for {self.year}>"
+
+    __add__ = __radd__ = __sub__ = __rsub__ = _raise
+    __mul__ = __rmul__ = __truediv__ = __rtruediv__ = _raise
+    __floordiv__ = __rfloordiv__ = __mod__ = __rmod__ = _raise
+    __pow__ = __rpow__ = __neg__ = __pos__ = __abs__ = _raise
+    __lt__ = __le__ = __gt__ = __ge__ = _raise
+    __int__ = __float__ = __index__ = __round__ = _raise
+    __bool__ = _raise
+
+
 @dataclass(frozen=True)
 class TaxYear:
     """All headline UK personal-tax parameters for one tax year (England)."""
@@ -124,11 +164,70 @@ _2025_26 = TaxYear(
 )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 2026/27
+# Verified against GOV.UK, fetched 2026-10-29 (England):
+#   https://www.gov.uk/income-tax-rates
+#   https://www.gov.uk/national-insurance/how-much-you-pay
+#   https://www.gov.uk/child-benefit-rates
+#   https://www.gov.uk/child-benefit-tax-charge
+# Personal Allowance, income tax bands/rates, employee Class 1 NI, and Child
+# Benefit/HICBC are confirmed unchanged from 2025/26 (frozen thresholds).
+#
+# Everything below that line is NOT verified for 2026/27 (CGT, dividend and
+# savings allowances, ISA/JISA, pension annual allowance, trading allowance,
+# IHT, SDLT surcharge) — each is a NotVerified placeholder, not a copy of the
+# 2025/26 figure. Fill each in only once actually verified against GOV.UK,
+# with its own source added above.
+# ─────────────────────────────────────────────────────────────────────────────
+_2026_27 = TaxYear(
+    year="2026/27",
+    tax_year_end="2027-04-05",
+    personal_allowance=12570,
+    basic_rate_limit=50270,
+    higher_rate_limit=125140,
+    taper_start=100000,
+    basic_rate=0.20,
+    higher_rate=0.40,
+    additional_rate=0.45,
+    ni_primary_threshold=12570,
+    ni_upper_earnings=50270,
+    ni_main_rate=0.08,
+    ni_upper_rate=0.02,
+    savings_allowance_basic=NotVerified("2026/27", "savings_allowance_basic"),
+    savings_allowance_higher=NotVerified("2026/27", "savings_allowance_higher"),
+    dividend_allowance=NotVerified("2026/27", "dividend_allowance"),
+    cgt_exemption=NotVerified("2026/27", "cgt_exemption"),
+    isa_allowance=NotVerified("2026/27", "isa_allowance"),
+    jisa_allowance=NotVerified("2026/27", "jisa_allowance"),
+    pension_annual_allowance=NotVerified("2026/27", "pension_annual_allowance"),
+    trading_allowance=NotVerified("2026/27", "trading_allowance"),
+    cgt_basic_rate_property=NotVerified("2026/27", "cgt_basic_rate_property"),
+    cgt_higher_rate_property=NotVerified("2026/27", "cgt_higher_rate_property"),
+    cb_weekly_first_child=27.05,
+    cb_weekly_additional_child=17.90,
+    hicbc_taper_start=60000,
+    hicbc_taper_end=80000,
+    iht_nil_rate_band=NotVerified("2026/27", "iht_nil_rate_band"),
+    iht_residence_nil_rate_band=NotVerified("2026/27", "iht_residence_nil_rate_band"),
+    iht_rate=NotVerified("2026/27", "iht_rate"),
+    iht_annual_gift_exemption=NotVerified("2026/27", "iht_annual_gift_exemption"),
+    sdlt_additional_surcharge=NotVerified("2026/27", "sdlt_additional_surcharge"),
+    sources=(
+        "https://www.gov.uk/income-tax-rates",
+        "https://www.gov.uk/national-insurance/how-much-you-pay",
+        "https://www.gov.uk/child-benefit-rates",
+        "https://www.gov.uk/child-benefit-tax-charge",
+    ),
+)
+
+
 TAX_YEARS = {
     "2025/26": _2025_26,
+    "2026/27": _2026_27,
 }
 
-DEFAULT_TAX_YEAR = "2025/26"
+DEFAULT_TAX_YEAR = "2026/27"
 
 
 class UnknownTaxYear(KeyError):

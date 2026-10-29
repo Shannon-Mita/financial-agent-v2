@@ -75,8 +75,12 @@ def calc_income_tax(
 
     taxable = max(0.0, adjusted - pa)
 
-    # Basic-rate band is measured from the (tapered) PA, extended by gift aid.
-    basic_band = max(0.0, ty.basic_rate_limit - pa) + gift_aid_gross
+    # Basic-rate band width is fixed at its full-PA value (£37,700) even once
+    # the taper has reduced the CURRENT pa — using the tapered `pa` here would
+    # let newly-exposed income fall into the 20% band instead of 40%, which is
+    # exactly wrong: the real ~60% marginal rate between £100k-£125,140 only
+    # arises because that income lands in the 40% band. Extended by gift aid.
+    basic_band = max(0.0, ty.basic_rate_limit - ty.personal_allowance) + gift_aid_gross
     basic = min(taxable, basic_band)
     higher_band = ty.higher_rate_limit - ty.basic_rate_limit
     higher = min(max(0.0, taxable - basic), higher_band)

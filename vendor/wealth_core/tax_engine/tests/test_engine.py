@@ -308,3 +308,61 @@ def test_golden_household_unmarried_iht_exposure():
     r = calc_iht(600000, tax_year=TY, is_married_or_civil_partner=False)
     assert r.tax_due == 40000
     assert r.spouse_exemption_applied is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FIX: the 20% (basic-rate) band width must stay fixed at its full-PA value
+# (£37,700) even once the personal-allowance taper has reduced the current
+# PA — this is the actual UK rule, and it's the source of the well-documented
+# ~60% marginal rate between £100,000 and £125,140 (every pound earned in
+# that zone, AND every pound of allowance the taper takes away, lands in the
+# 40% band, not 20%). The engine previously recomputed the band width from
+# the TAPERED pa (`basic_rate_limit - pa`), which let some of that income
+# fall into the wider 20% band instead, understating tax. Verified by hand
+# against GOV.UK for a real £105,000 salary (Partner's actual income) —
+# applies identically to every tax year, not just 2026/27, since the bands
+# are unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_basic_band_width_is_fixed_not_shrunk_by_taper_105k():
+    """£105,000 salary, hand-verified against GOV.UK: PA tapers to £10,070,
+    but the 20% band must still be exactly £37,700 wide, not £40,200."""
+    r = calc_income_tax(105000, tax_year=TY)
+    assert r.personal_allowance == 10070  # taper itself was already correct
+    assert r.income_tax == 30432
+    assert r.national_insurance == 4111  # unaffected by this bug; rounds 4110.60
+    assert r.take_home == 70457  # rounds 70457.40
+
+
+def test_taper_zone_marginal_income_tax_effect_is_60_percent():
+    """Independent of the hardcoded `marginal_rate` field: an extra £100 of
+    gross income strictly inside the taper zone must cost exactly £60 more
+    income tax — £40 at 40% on the extra £100 itself, plus £20 at 40% on the
+    further £50 of personal allowance the taper takes away. A 50% delta here
+    would mean the newly-exposed allowance is being taxed at 20%, not 40%."""
+    lower = calc_income_tax(110000, tax_year=TY)
+    higher = calc_income_tax(110100, tax_year=TY)
+    assert higher.income_tax - lower.income_tax == 60
+
+
+def test_gift_aid_extends_basic_band_even_when_pa_is_tapered():
+    """Gift Aid's basic-band extension must still apply on top of the fixed
+    £37,700 width while PA is also tapered — the two adjustments are
+    independent and both additive to the band width."""
+    without = calc_income_tax(110000, tax_year=TY)
+    with_ga = calc_income_tax(110000, tax_year=TY, gift_aid=4000)
+    assert without.income_tax == 33432
+    assert with_ga.income_tax == 32432
+    # gift_aid_gross = 4000 / (1 - 0.20) = 5000, saving 5000 * (40% - 20%)
+    assert without.income_tax - with_ga.income_tax == 1000
+
+
+def test_pension_contribution_basic_band_unaffected_by_resulting_taper_relief():
+    """Extends test_pension_partial_restores_some_pa with the actual tax
+    total: a pension contribution reduces ANI and restores some PA via the
+    taper (unchanged behaviour), but the 20% band width must still be fixed
+    at £37,700 regardless of how much taper relief the pension bought back."""
+    r = calc_income_tax(110000, tax_year=TY, pension_contribution=4000)
+    assert r.adjusted_net_income == 106000  # unchanged behaviour
+    assert r.personal_allowance == 9570  # unchanged behaviour
+    assert r.income_tax == 31032
