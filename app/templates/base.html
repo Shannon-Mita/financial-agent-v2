@@ -21,6 +21,7 @@
     <nav>
       <a href="{{ url_for('routes.dashboard') }}">Numbers</a>
       <a href="{{ url_for('routes.goals_list') }}">Goals</a>
+      <a href="{{ url_for('routes.confirm_stale') }}">Confirm stale</a>
     </nav>
     <div class="topbar">
       <span>{{ user.email }} ({{ user.role }})</span>

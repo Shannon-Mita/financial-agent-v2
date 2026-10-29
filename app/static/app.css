@@ -122,6 +122,8 @@ nav a { font-weight: 600; }
 
 form.inline { display: inline; }
 
+.value-input { width: auto; display: inline-block; margin: 0 0.3rem; }
+
 input[type="text"], input[type="number"], input[type="date"], select, textarea {
   width: 100%;
   font-size: 1rem;

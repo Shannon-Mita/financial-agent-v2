@@ -23,8 +23,7 @@
 
     {% if user.role == "owner" %}
     <a href="{{ url_for('routes.edit_goal', goal_id=goal.id) }}"><button type="button" class="small secondary">Edit</button></a>
-    <form method="post" action="{{ url_for('routes.delete_goal', goal_id=goal.id) }}" class="inline"
-          onsubmit="return confirm('Delete this goal? This cannot be undone.');">
+    <form method="post" action="{{ url_for('routes.delete_goal', goal_id=goal.id) }}" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="small danger">Delete</button>
     </form>

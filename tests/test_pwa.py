@@ -27,9 +27,35 @@ def test_manifest_is_served_with_correct_content_type_and_fields(client):
 
 def test_manifest_accessible_without_login(client):
     """Manifest/icons must be fetchable before auth — that's how "Add to
-    Home Screen" works even from the login screen."""
+    Home Screen" works even from the login screen. `client` here has no
+    session cookie set at all (no login() call) — this is a genuinely
+    anonymous request, not just an unchecked one."""
+    with client.session_transaction() as sess:
+        assert "_user_id" not in sess
     resp = client.get("/manifest.webmanifest")
     assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("size", [192, 512])
+def test_icon_accessible_without_login(client, size):
+    with client.session_transaction() as sess:
+        assert "_user_id" not in sess
+    resp = client.get(f"/static/icons/icon-{size}.png")
+    assert resp.status_code == 200
+
+
+def test_manifest_contains_nothing_household_specific(client):
+    """The manifest is public — it must never carry a user's email, a fact
+    value, or anything else that would identify or expose the household.
+    Pin the exact key set so a future addition can't sneak something in
+    without this test being updated (and someone noticing why)."""
+    data = client.get("/manifest.webmanifest").get_json()
+    assert set(data.keys()) == {
+        "name", "short_name", "start_url", "display", "background_color",
+        "theme_color", "icons",
+    }
+    for forbidden in ("shannon", "partner", "@", "£", "paye", "pension", "isa"):
+        assert forbidden not in str(data).lower()
 
 
 @pytest.mark.parametrize("size", [192, 512])

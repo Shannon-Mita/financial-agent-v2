@@ -66,6 +66,8 @@ def test_valid_csrf_token_update_succeeds_end_to_end(app, client, pg_conn, owner
     "/tasks/1/delete",
     "/tasks/1/toggle",
     "/facts/goals.fire.target_date/update",
+    "/confirm-stale/income.shannon.paye_salary/confirm",
+    "/confirm-stale/income.shannon.paye_salary/update",
 ])
 def test_every_new_post_route_rejects_missing_csrf_token(client, path):
     resp = client.post(path, data={"title": "x", "value": "x"})

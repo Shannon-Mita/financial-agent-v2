@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Confirm stale numbers{% endblock %}
+{% block content %}
+  <h1>Confirm stale numbers</h1>
+
+  {% if item %}
+  <p>{{ remaining }} number{{ "s" if remaining != 1 else "" }} need{{ "" if remaining != 1 else "s" }} confirming.</p>
+
+  <div class="card">
+    <div class="card-title">{{ item.label }}</div>
+    <div class="raw-key">{{ item.key }}</div>
+    <div class="row"><span class="label">Current value</span><span>{{ item.value }} {{ item.unit }}</span></div>
+    <div class="row"><span class="label">Owner</span><span>{{ item.owner }}</span></div>
+    <div class="row">
+      <span class="label">As of</span>
+      <span>{{ item.as_of }} <span class="badge stale">{{ item.age_days }}d old, max {{ item.max_age_days }}d</span></span>
+    </div>
+
+    <form method="post" action="{{ url_for('routes.confirm_stale_confirm', key=item.key) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Confirm still correct</button>
+    </form>
+
+    <form method="post" action="{{ url_for('routes.confirm_stale_update', key=item.key) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="text" name="value" placeholder="New value" class="value-input">
+      <button type="submit" class="secondary">Save new value</button>
+    </form>
+  </div>
+  {% else %}
+  <p class="readonly-note">All caught up — nothing stale needs confirming right now.</p>
+  {% endif %}
+{% endblock %}

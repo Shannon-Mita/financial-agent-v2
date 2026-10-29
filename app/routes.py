@@ -122,9 +122,11 @@ def dashboard():
     return render_template("dashboard.html", groups=groups, user=current_user, not_yet_set=not_yet_set)
 
 
-@bp.route("/facts/<path:key>/confirm", methods=["POST"])
-@login_required
-def confirm_fact(key):
+def _confirm_fact_value(key: str) -> None:
+    """Shared by /facts/<key>/confirm and the confirm-stale walkthrough —
+    same permission check, same write, just two different response shapes
+    (204 for the Stage 0 dashboard's no-navigate trick, a redirect for the
+    walkthrough)."""
     store = _store()
     fm = store.get_meta(key)
     if fm is None:
@@ -142,6 +144,35 @@ def confirm_fact(key):
         note=fm.fact.note,
     )
     store.set(new_fact, owner=fm.owner, entered_by_user_id=int(current_user.id))
+
+
+def _update_existing_fact_value(key: str, raw_value: str) -> None:
+    """Shared by /facts/<key>/update's existing-key branch and the
+    confirm-stale walkthrough's Edit action. Never handles create-if-missing
+    — a stale fact, by definition, already exists."""
+    store = _store()
+    fm = store.get_meta(key)
+    if fm is None:
+        abort(404)
+    if not can_write_fact(current_user.role, fm.owner, key):
+        abort(403)
+
+    value = _coerce_value(fm.fact.unit, raw_value)
+    new_fact = Fact.create(
+        key=key,
+        value=value,
+        unit=fm.fact.unit,
+        source=Source.USER_STATED,
+        category=fm.fact.category,
+        as_of=date.today(),
+    )
+    store.set(new_fact, owner=fm.owner, entered_by_user_id=int(current_user.id))
+
+
+@bp.route("/facts/<path:key>/confirm", methods=["POST"])
+@login_required
+def confirm_fact(key):
+    _confirm_fact_value(key)
     return "", 204
 
 
@@ -170,24 +201,72 @@ def update_fact(key):
         store.set(new_fact, owner=owner, entered_by_user_id=int(current_user.id))
         return "", 204
 
-    if not can_write_fact(current_user.role, fm.owner, key):
-        abort(403)
-
     raw_value = request.form.get("value")
     if raw_value is None:
         abort(400, description="Missing 'value'")
-    value = _coerce_value(fm.fact.unit, raw_value)
-
-    new_fact = Fact.create(
-        key=key,
-        value=value,
-        unit=fm.fact.unit,
-        source=Source.USER_STATED,
-        category=fm.fact.category,
-        as_of=date.today(),
-    )
-    store.set(new_fact, owner=fm.owner, entered_by_user_id=int(current_user.id))
+    _update_existing_fact_value(key, raw_value)
     return "", 204
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Confirm-stale walkthrough — one stale fact at a time, Confirm or Edit.
+# Uses the exact same can_write_fact gate as the Numbers page: a stale fact
+# the current user isn't allowed to write never appears in their walkthrough
+# at all (not shown-but-disabled — simply absent).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _actionable_stale_items():
+    """Stale facts the current user may write, oldest-first (most overdue
+    first), each with its label/age for the template."""
+    store = _store()
+    current = store.current()
+    meta = store.current_with_meta()
+    freshness = check_freshness(current, list(current.keys()))
+
+    items = []
+    for sf in freshness.stale:
+        fm = meta[sf.key]
+        if not can_write_fact(current_user.role, fm.owner, sf.key):
+            continue
+        items.append({
+            "key": sf.key,
+            "label": label_for(sf.key),
+            "value": fm.fact.value,
+            "unit": fm.fact.unit.value,
+            "owner": fm.owner,
+            "as_of": fm.fact.as_of.isoformat(),
+            "age_days": sf.age_days,
+            "max_age_days": sf.max_age_days,
+        })
+    items.sort(key=lambda i: -i["age_days"])
+    return items
+
+
+@bp.route("/confirm-stale")
+@login_required
+def confirm_stale():
+    items = _actionable_stale_items()
+    return render_template(
+        "confirm_stale.html", user=current_user,
+        item=items[0] if items else None, remaining=len(items),
+    )
+
+
+@bp.route("/confirm-stale/<path:key>/confirm", methods=["POST"])
+@login_required
+def confirm_stale_confirm(key):
+    _confirm_fact_value(key)
+    return redirect(url_for("routes.confirm_stale"))
+
+
+@bp.route("/confirm-stale/<path:key>/update", methods=["POST"])
+@login_required
+def confirm_stale_update(key):
+    raw_value = request.form.get("value")
+    if raw_value is None:
+        abort(400, description="Missing 'value'")
+    _update_existing_fact_value(key, raw_value)
+    return redirect(url_for("routes.confirm_stale"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -44,7 +44,7 @@
       </form>
       <form method="post" action="{{ url_for('routes.update_fact', key=row.key) }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="text" name="value" placeholder="New value" style="width:auto; display:inline-block; margin:0 0.3rem;">
+        <input type="text" name="value" placeholder="New value" class="value-input">
         <button type="submit" class="small secondary">Update</button>
       </form>
       {% else %}
