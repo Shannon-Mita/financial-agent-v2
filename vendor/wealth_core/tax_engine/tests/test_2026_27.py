@@ -85,6 +85,37 @@ def test_golden_105000_salary():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Golden scenarios above £100k — hand-computed with the basic band fixed at
+# £37,700 and the higher band running £37,700-£125,140 of taxable income
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_golden_120000_salary():
+    r = calc_income_tax(120000, tax_year=TY)
+    assert r.income_tax == 39432
+
+
+def test_golden_130000_salary():
+    r = calc_income_tax(130000, tax_year=TY)
+    assert r.income_tax == 44703
+
+
+def test_golden_200000_salary():
+    r = calc_income_tax(200000, tax_year=TY)
+    assert r.income_tax == 76203
+
+
+def test_golden_200000_salary_with_gift_aid():
+    """£200,000 gross, £1,000 grossed-up Gift Aid (raw donation £800, since
+    gift_aid_gross = gift_aid / (1 - 20%)), no pension. Hand-computed: basic
+    band £38,700 (£37,700 + £1,000 gift aid extension) @ 20% = £7,740; higher
+    band stays the fixed £87,440 wide @ 40% = £34,976 (gift aid moves the
+    additional-rate threshold up by £1,000 too, it does not shrink the 40%
+    band); remainder £73,860 @ 45% = £33,237. Total £75,953."""
+    r = calc_income_tax(200000, tax_year=TY, gift_aid=800)
+    assert r.income_tax == 75953
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Child Benefit / HICBC
 # ─────────────────────────────────────────────────────────────────────────────
 

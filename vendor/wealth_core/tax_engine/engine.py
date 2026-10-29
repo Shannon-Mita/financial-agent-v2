@@ -82,7 +82,7 @@ def calc_income_tax(
     # arises because that income lands in the 40% band. Extended by gift aid.
     basic_band = max(0.0, ty.basic_rate_limit - ty.personal_allowance) + gift_aid_gross
     basic = min(taxable, basic_band)
-    higher_band = ty.higher_rate_limit - ty.basic_rate_limit
+    higher_band = ty.higher_rate_limit - (ty.basic_rate_limit - ty.personal_allowance)
     higher = min(max(0.0, taxable - basic), higher_band)
     additional = max(0.0, taxable - basic - higher)
 
