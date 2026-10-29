@@ -4,7 +4,17 @@ are the server-side rules behind the §1 table plus Shannon's amendments.
 """
 import pytest
 
-from app.permissions import PROTECTED_KEY_PREFIXES, can_write_fact, is_protected
+from app.permissions import (
+    CREATABLE_FACT_KEYS,
+    PROTECTED_KEY_PREFIXES,
+    can_create_fact,
+    can_create_task,
+    can_edit_or_delete_task,
+    can_toggle_goal_status,
+    can_toggle_task,
+    can_write_fact,
+    is_protected,
+)
 
 PROTECTED_KEYS = ["fire.target_value", "plan.monthly_contribution"]
 NON_PROTECTED_KEYS = ["income.partner.paye_salary", "property.main.value"]
@@ -216,3 +226,142 @@ def test_owner_can_write_every_goals_key_over_http_even_when_owner_is_joint(
     )
     assert resp.status_code == 204
     assert store.get(key).value == new_expected
+
+
+# ── Stage 1: create-if-missing fact registry ───────────────────────────────
+
+def test_creatable_fact_keys_is_exactly_the_approved_registry():
+    """Pins the registry to the two keys Shannon approved — fails loudly if
+    a key is added or removed without an explicit decision."""
+    assert CREATABLE_FACT_KEYS == frozenset({
+        "goals.fire.target_date",
+        "savings.house_deposit.balance",
+    })
+
+
+@pytest.mark.parametrize("key", list(CREATABLE_FACT_KEYS))
+def test_owner_can_create_every_registered_key(key):
+    assert can_create_fact("owner", key)
+
+
+@pytest.mark.parametrize("key", list(CREATABLE_FACT_KEYS))
+def test_member_cannot_create_any_registered_key(key):
+    assert not can_create_fact("member", key)
+
+
+def test_unknown_key_is_rejected_even_for_owner():
+    """The registry is a strict allowlist — an owner cannot create an
+    arbitrary key just by posting to it, only the curated ones above."""
+    assert not can_create_fact("owner", "income.shannon.paye_salary")
+    assert not can_create_fact("owner", "some.made.up.key")
+
+
+def test_unknown_role_cannot_create():
+    assert not can_create_fact("someone-else", "goals.fire.target_date")
+
+
+# ── Stage 1: tasks ───────────────────────────────────────────────────────
+
+def test_owner_can_create_any_task():
+    assert can_create_task("owner", 1, assignee_user_id=2)
+    assert can_create_task("owner", 1, assignee_user_id=None)
+
+
+def test_member_can_only_create_a_task_assigned_to_herself():
+    assert can_create_task("member", 2, assignee_user_id=2)
+    assert not can_create_task("member", 2, assignee_user_id=1)  # assigned to Shannon
+    assert not can_create_task("member", 2, assignee_user_id=None)  # unassigned
+
+
+def test_owner_can_edit_or_delete_any_task():
+    assert can_edit_or_delete_task("owner", 1, creator_user_id=2, assignee_user_id=2)
+
+
+def test_member_can_edit_or_delete_only_her_own_task():
+    # Created by her, still assigned to her — "her own".
+    assert can_edit_or_delete_task("member", 2, creator_user_id=2, assignee_user_id=2)
+
+
+def test_member_cannot_edit_or_delete_a_task_created_by_shannon():
+    assert not can_edit_or_delete_task("member", 2, creator_user_id=1, assignee_user_id=2)
+
+
+def test_member_cannot_edit_or_delete_a_task_assigned_to_shannon():
+    assert not can_edit_or_delete_task("member", 2, creator_user_id=2, assignee_user_id=1)
+
+
+def test_owner_can_toggle_any_task():
+    assert can_toggle_task("owner", 1, assignee_user_id=2)
+
+
+def test_member_can_toggle_only_her_own_assigned_task():
+    assert can_toggle_task("member", 2, assignee_user_id=2)
+    assert not can_toggle_task("member", 2, assignee_user_id=1)   # his task
+    assert not can_toggle_task("member", 2, assignee_user_id=None)  # unassigned
+
+
+# ── Stage 1: goal status toggling (binary/habit only, member-assigned) ────
+
+def test_owner_can_toggle_any_goal_status():
+    assert can_toggle_goal_status("owner", 1, "target", assignee_user_ids=[2])
+
+
+def test_member_can_toggle_binary_or_habit_goal_assigned_to_her():
+    assert can_toggle_goal_status("member", 2, "binary", assignee_user_ids=[2])
+    assert can_toggle_goal_status("member", 2, "habit", assignee_user_ids=[2])
+
+
+def test_member_cannot_toggle_a_target_goal_even_if_assigned():
+    assert not can_toggle_goal_status("member", 2, "target", assignee_user_ids=[2])
+
+
+def test_member_cannot_toggle_a_goal_she_is_not_assigned_to():
+    assert not can_toggle_goal_status("member", 2, "binary", assignee_user_ids=[1])
+
+
+# ── Stage 1: @owner_required decorator, over HTTP ──────────────────────────
+# No goals/tasks routes exist yet (that's step iii) — this exercises the
+# decorator itself against an ad-hoc view, registered before the first
+# request so Flask accepts the extra rule.
+
+def test_owner_required_lets_owner_through(app, pg_conn, owner_user_id):
+    from app.permissions import owner_required
+
+    @app.route("/_test/owner-only")
+    @owner_required
+    def _owner_only():
+        return "ok", 200
+
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_user_id)
+    resp = client.get("/_test/owner-only")
+    assert resp.status_code == 200
+
+
+def test_owner_required_blocks_member(app, pg_conn, member_user_id):
+    from app.permissions import owner_required
+
+    @app.route("/_test/owner-only-2")
+    @owner_required
+    def _owner_only_2():
+        return "ok", 200
+
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(member_user_id)
+    resp = client.get("/_test/owner-only-2")
+    assert resp.status_code == 403
+
+
+def test_owner_required_redirects_unauthenticated(app, pg_conn):
+    from app.permissions import owner_required
+
+    @app.route("/_test/owner-only-3")
+    @owner_required
+    def _owner_only_3():
+        return "ok", 200
+
+    client = app.test_client()
+    resp = client.get("/_test/owner-only-3")
+    assert resp.status_code in (302, 401)

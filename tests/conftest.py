@@ -13,13 +13,16 @@ os.environ.setdefault(
     "DATABASE_URL", os.environ.get("TEST_DATABASE_URL", "postgresql://unused/unused")
 )
 
+import glob
+
 import pytest  # noqa: E402
 
 from app import create_app  # noqa: E402
 from app.config import Config  # noqa: E402
 from app.db import run_migration  # noqa: E402
 
-MIGRATION_PATH = os.path.join(os.path.dirname(__file__), "..", "migrations", "001_init.sql")
+MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "migrations")
+MIGRATION_PATHS = sorted(glob.glob(os.path.join(MIGRATIONS_DIR, "*.sql")))
 
 
 @pytest.fixture
@@ -45,12 +48,16 @@ def pg_conn():
     import psycopg2
 
     conn = psycopg2.connect(url)
-    run_migration(conn, MIGRATION_PATH)
+    for path in MIGRATION_PATHS:
+        run_migration(conn, path)
     with conn.cursor() as cur:
         # TRUNCATE bypasses row-level UPDATE/DELETE triggers entirely (it's not
         # a DELETE statement) — safe for test isolation without weakening the
         # append-only guarantee application code relies on.
-        cur.execute("TRUNCATE facts, users RESTART IDENTITY CASCADE")
+        cur.execute(
+            "TRUNCATE facts, users, goals, goal_assignees, tasks, audit_log "
+            "RESTART IDENTITY CASCADE"
+        )
     conn.commit()
     yield conn
     conn.close()

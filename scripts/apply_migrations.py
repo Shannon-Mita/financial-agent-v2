@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-One-off: apply migrations/001_init.sql to the database at DATABASE_URL.
-No psql needed — uses psycopg2, already in requirements.txt.
+One-off: apply every migrations/*.sql file to the database at DATABASE_URL,
+in filename order (001_, 002_, ...). No psql needed — uses psycopg2, already
+in requirements.txt.
 
-Safe to re-run: every statement in 001_init.sql is idempotent (CREATE TABLE
-IF NOT EXISTS, CREATE OR REPLACE FUNCTION, DROP TRIGGER IF EXISTS + CREATE).
+Safe to re-run: every statement in every migration file is idempotent
+(CREATE TABLE IF NOT EXISTS, CREATE OR REPLACE FUNCTION, DROP TRIGGER IF
+EXISTS + CREATE).
 
-A successful run prints "Applied migrations/001_init.sql." and exits 0.
+A successful run prints "Applied migrations/<file>." per file and exits 0.
 Never prints DATABASE_URL or any other env var.
 """
+import glob
 import os
 import sys
 
@@ -16,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.db import connect, run_migration  # noqa: E402
 
-MIGRATION_PATH = os.path.join(os.path.dirname(__file__), "..", "migrations", "001_init.sql")
+MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "migrations")
 
 
 def main():
@@ -24,10 +27,15 @@ def main():
     if not database_url:
         sys.exit("DATABASE_URL is not set.")
 
+    migration_paths = sorted(glob.glob(os.path.join(MIGRATIONS_DIR, "*.sql")))
+    if not migration_paths:
+        sys.exit(f"No .sql files found in {os.path.relpath(MIGRATIONS_DIR)}.")
+
     conn = connect(database_url)
-    run_migration(conn, MIGRATION_PATH)
+    for path in migration_paths:
+        run_migration(conn, path)
+        print(f"Applied {os.path.relpath(path)}.")
     conn.close()
-    print(f"Applied {os.path.relpath(MIGRATION_PATH)}.")
 
 
 if __name__ == "__main__":
