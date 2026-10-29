@@ -55,32 +55,38 @@
   {% endfor %}
   {% endmacro %}
 
-  {% for g in top_level_goals %}
-    {{ goal_card(g) }}
-  {% endfor %}
+  <div class="card-grid">
+    {% for g in top_level_goals %}
+    <div class="grid-cell">
+      {{ goal_card(g) }}
+    </div>
+    {% endfor %}
+  </div>
 
   {% if not top_level_goals %}
   <p class="readonly-note">No goals yet.</p>
   {% endif %}
 
   <h2>Tasks not tied to a goal</h2>
-  {% for t in standalone_tasks %}
-  <div class="card task{% if t.done %} done{% endif %}">
-    <form method="post" action="{{ url_for('routes.toggle_task', task_id=t.id) }}" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="next" value="{{ url_for('routes.goals_list') }}">
-      <button type="submit" class="small{% if t.done %} secondary{% endif %}">{{ "Undo" if t.done else "Done" }}</button>
-    </form>
-    <label>{{ t.title }}{% if t.assignee_user_id and users.get(t.assignee_user_id) %} — {{ users[t.assignee_user_id].email }}{% endif %}</label>
-    {% if t.created_by_user_id == user.id | int or user.role == "owner" %}
-    <form method="post" action="{{ url_for('routes.delete_task', task_id=t.id) }}" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="next" value="{{ url_for('routes.goals_list') }}">
-      <button type="submit" class="small danger">Delete</button>
-    </form>
-    {% endif %}
+  <div class="card-grid">
+    {% for t in standalone_tasks %}
+    <div class="card task{% if t.done %} done{% endif %}">
+      <form method="post" action="{{ url_for('routes.toggle_task', task_id=t.id) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ url_for('routes.goals_list') }}">
+        <button type="submit" class="small{% if t.done %} secondary{% endif %}">{{ "Undo" if t.done else "Done" }}</button>
+      </form>
+      <label>{{ t.title }}{% if t.assignee_user_id and users.get(t.assignee_user_id) %} — {{ users[t.assignee_user_id].email }}{% endif %}</label>
+      {% if t.created_by_user_id == user.id | int or user.role == "owner" %}
+      <form method="post" action="{{ url_for('routes.delete_task', task_id=t.id) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ url_for('routes.goals_list') }}">
+        <button type="submit" class="small danger">Delete</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
   {% if not standalone_tasks %}<p class="readonly-note">None.</p>{% endif %}
 
   <div class="card">

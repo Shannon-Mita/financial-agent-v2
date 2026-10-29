@@ -1,17 +1,24 @@
 /* Mobile-first, minimal. Partner uses this on her phone — single column,
    full-width tap targets, no table layout (tables don't reflow on a small
-   screen). Works fine on a laptop too; it just doesn't try to use the
-   extra width for anything clever. */
+   screen), no horizontal scroll at any width. On a wide screen (laptop),
+   .page centres with a ~1100px cap and .card-grid switches from stacked
+   cards to a 2-3 column grid — the cards themselves don't change at all. */
 
 * { box-sizing: border-box; }
 
+html, body { overflow-x: hidden; }
+
 body {
   margin: 0;
-  padding: 0.75rem;
-  max-width: 480px;
   font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: #1a1a1a;
   background: #fafafa;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0.75rem;
 }
 
 h1 { font-size: 1.3rem; margin: 0.5rem 0 1rem; }
@@ -43,20 +50,46 @@ nav a { font-weight: 600; }
   border-radius: 10px;
   padding: 0.75rem 1rem;
   margin-bottom: 0.75rem;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .card.sub { margin-left: 1rem; border-left: 3px solid #0a5; }
 
-.card-title { font-weight: 600; font-size: 1.05rem; margin-bottom: 0.25rem; }
+.card-title { font-weight: 600; font-size: 1.05rem; margin-bottom: 0.25rem; overflow-wrap: break-word; }
+
+.raw-key { font-size: 0.75rem; color: #999; margin-bottom: 0.4rem; overflow-wrap: break-word; }
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.2rem 0;
   font-size: 0.95rem;
 }
 .row .label { color: #555; }
+
+/* Flat lists of cards (Numbers rows, Goals top-level cards). Mobile: plain
+   stacked block (each .card keeps its own margin-bottom). From ~700px: a
+   2-column grid; from ~980px: 3 columns. A goal's sub-goal cards nest
+   inside a .grid-cell alongside their parent so the whole family occupies
+   one grid cell, not one cell each — nesting stays visually intact. */
+.card-grid { display: block; }
+.grid-cell { min-width: 0; }
+
+@media (min-width: 700px) {
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    align-items: start;
+  }
+}
+
+@media (min-width: 980px) {
+  .card-grid { grid-template-columns: repeat(3, 1fr); }
+}
 
 .badge {
   display: inline-block;
@@ -122,5 +155,5 @@ table { width: 100%; border-collapse: collapse; }
 table th, table td { text-align: left; padding: 0.4rem; border-bottom: 1px solid #eee; font-size: 0.85rem; }
 
 @media (min-width: 540px) {
-  body { padding: 1.5rem; }
+  .page { padding: 1.5rem; }
 }

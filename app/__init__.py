@@ -4,7 +4,7 @@ from flask import Flask
 from flask_login import LoginManager
 from flask_wtf import CSRFProtect
 
-from . import auth, db, routes
+from . import auth, db, pwa, routes
 from .config import Config
 from .users import load_user_by_id
 
@@ -40,6 +40,7 @@ def create_app(config: Config | None = None) -> Flask:
     auth.init_app(app)
 
     app.register_blueprint(auth.bp)
+    app.register_blueprint(pwa.bp)
     app.register_blueprint(routes.bp)
 
     return app

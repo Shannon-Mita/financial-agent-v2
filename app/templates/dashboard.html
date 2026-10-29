@@ -5,45 +5,53 @@
 
   {% if user.role == "owner" and not_yet_set %}
   <h2>Not yet set</h2>
-  {% for item in not_yet_set %}
-  <div class="card">
-    <div class="card-title">{{ item.key }} &#128274;</div>
-    <form method="post" action="{{ url_for('routes.update_fact', key=item.key) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="{{ item.input_type }}" name="value" placeholder="{{ item.unit }}" required>
-      <button type="submit">Set {{ item.key }}</button>
-    </form>
+  <div class="card-grid">
+    {% for item in not_yet_set %}
+    <div class="card">
+      <div class="card-title">{{ item.key }} &#128274;</div>
+      <form method="post" action="{{ url_for('routes.update_fact', key=item.key) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="{{ item.input_type }}" name="value" placeholder="{{ item.unit }}" required>
+        <button type="submit">Set {{ item.key }}</button>
+      </form>
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
   {% endif %}
 
-  {% for row in rows %}
-  <div class="card">
-    <div class="card-title">
-      {{ row.key }}{% if row.protected %} &#128274;{% endif %}
+  {% for group_name, group_rows in groups %}
+  <h2>{{ group_name }}</h2>
+  <div class="card-grid">
+    {% for row in group_rows %}
+    <div class="card">
+      <div class="card-title">
+        {{ row.label }}{% if row.protected %} &#128274;{% endif %}
+      </div>
+      <div class="raw-key">{{ row.key }}</div>
+      <div class="row"><span class="label">Value</span><span>{{ row.value }} {{ row.unit }}</span></div>
+      <div class="row"><span class="label">Owner</span><span>{{ row.owner }}</span></div>
+      <div class="row">
+        <span class="label">As of</span>
+        <span>
+          {{ row.as_of }}
+          {% if row.stale %}<span class="badge stale">stale</span>{% else %}<span class="badge">fresh</span>{% endif %}
+        </span>
+      </div>
+      {% if row.can_edit %}
+      <form method="post" action="{{ url_for('routes.confirm_fact', key=row.key) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="small">Confirm still correct</button>
+      </form>
+      <form method="post" action="{{ url_for('routes.update_fact', key=row.key) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="value" placeholder="New value" style="width:auto; display:inline-block; margin:0 0.3rem;">
+        <button type="submit" class="small secondary">Update</button>
+      </form>
+      {% else %}
+      <p class="readonly-note">Read-only</p>
+      {% endif %}
     </div>
-    <div class="row"><span class="label">Value</span><span>{{ row.value }} {{ row.unit }}</span></div>
-    <div class="row"><span class="label">Owner</span><span>{{ row.owner }}</span></div>
-    <div class="row">
-      <span class="label">As of</span>
-      <span>
-        {{ row.as_of }}
-        {% if row.stale %}<span class="badge stale">stale</span>{% else %}<span class="badge">fresh</span>{% endif %}
-      </span>
-    </div>
-    {% if row.can_edit %}
-    <form method="post" action="{{ url_for('routes.confirm_fact', key=row.key) }}" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="small">Confirm still correct</button>
-    </form>
-    <form method="post" action="{{ url_for('routes.update_fact', key=row.key) }}" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="text" name="value" placeholder="New value" style="width:auto; display:inline-block; margin:0 0.3rem;">
-      <button type="submit" class="small secondary">Update</button>
-    </form>
-    {% else %}
-    <p class="readonly-note">Read-only</p>
-    {% endif %}
+    {% endfor %}
   </div>
   {% endfor %}
 {% endblock %}

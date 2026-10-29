@@ -15,6 +15,7 @@ from . import goals_store, vendor_path  # noqa: F401
 from facts_layer import Fact, Source, Unit, check_freshness
 
 from .db import get_conn
+from .fact_labels import GROUP_ORDER, group_for, label_for
 from .goal_progress import FIRE_TARGET_KEY, feasibility_for_goal, fire_accessible_breakdown
 from .permissions import (
     CREATABLE_FACT_KEYS,
@@ -90,6 +91,7 @@ def dashboard():
         fm = meta[key]
         rows.append({
             "key": key,
+            "label": label_for(key),
             "value": fm.fact.value,
             "unit": fm.fact.unit.value,
             "category": fm.fact.category,
@@ -99,6 +101,11 @@ def dashboard():
             "protected": is_protected(key),
             "can_edit": can_write_fact(current_user.role, fm.owner, key),
         })
+
+    rows_by_group = defaultdict(list)
+    for row in rows:
+        rows_by_group[group_for(row["category"])].append(row)
+    groups = [(g, rows_by_group[g]) for g in GROUP_ORDER if rows_by_group[g]]
 
     not_yet_set = []
     if current_user.role == "owner":
@@ -112,7 +119,7 @@ def dashboard():
                 "input_type": _input_type_for_unit(unit),
             })
 
-    return render_template("dashboard.html", rows=rows, user=current_user, not_yet_set=not_yet_set)
+    return render_template("dashboard.html", groups=groups, user=current_user, not_yet_set=not_yet_set)
 
 
 @bp.route("/facts/<path:key>/confirm", methods=["POST"])
