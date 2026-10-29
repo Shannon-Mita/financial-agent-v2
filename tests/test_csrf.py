@@ -47,7 +47,7 @@ def test_valid_csrf_token_update_succeeds_end_to_end(app, client, pg_conn, owner
         "/facts/income.shannon.paye_salary/update",
         data={"value": "60000", "csrf_token": token},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
     assert store.get("income.shannon.paye_salary").value == 60000
 
 

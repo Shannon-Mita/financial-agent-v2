@@ -62,7 +62,7 @@ def test_security_headers_do_not_break_dashboard_update_flow(client, pg_conn, ow
         "/facts/income.shannon.paye_salary/update",
         data={"value": "60000", "csrf_token": token},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
 
 
 def test_no_inline_style_attributes_remain_in_any_template():

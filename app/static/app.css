@@ -111,6 +111,16 @@ nav a { font-weight: 600; }
   margin-top: 0.35rem;
 }
 
+.flashes { margin-bottom: 0.75rem; }
+.flash {
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+.flash.success { background: #d9f2e3; color: #0a5; }
+.flash.error { background: #fde2e1; color: #a12; }
+
 .task {
   display: flex;
   align-items: center;

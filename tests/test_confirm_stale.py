@@ -149,10 +149,12 @@ def test_unauthenticated_get_redirects_to_login(client):
     assert resp.status_code == 302
 
 
-def test_existing_facts_update_endpoint_behaviour_unchanged_by_refactor(client, pg_conn, owner_user_id):
-    """The /facts/<key>/update and /confirm routes must still return 204,
-    not a redirect — the refactor that extracted shared helpers for the
-    confirm-stale walkthrough must not change their existing contract."""
+def test_existing_facts_update_endpoint_writes_still_work_after_the_refactor(client, pg_conn, owner_user_id):
+    """The /facts/<key>/update and /confirm routes now redirect (303) with
+    a flash instead of returning 204 (see the UX fix: a 204 left the page
+    looking unchanged with no JS to do anything about it) — this just
+    confirms the shared helpers extracted for the confirm-stale walkthrough
+    still perform the actual write correctly either way."""
     store = PostgresFactStore(pg_conn)
     store.set(
         Fact.create("income.shannon.paye_salary", 1, Unit.GBP_PER_YEAR, Source.USER_STATED, "income"),
@@ -164,10 +166,11 @@ def test_existing_facts_update_endpoint_behaviour_unchanged_by_refactor(client, 
         "/facts/income.shannon.paye_salary/update",
         data={"value": "60000", "csrf_token": token(page)},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
+    assert store.get("income.shannon.paye_salary").value == 60000
 
     page = client.get("/")
     resp = client.post(
         "/facts/income.shannon.paye_salary/confirm", data={"csrf_token": token(page)},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303

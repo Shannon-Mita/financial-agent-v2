@@ -7,10 +7,11 @@
   <h2>Not yet set</h2>
   <div class="card-grid">
     {% for item in not_yet_set %}
-    <div class="card">
+    <div class="card" id="fact-{{ item.key }}">
       <div class="card-title">{{ item.key }} &#128274;</div>
       <form method="post" action="{{ url_for('routes.update_fact', key=item.key) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ url_for('routes.dashboard') }}">
         <input type="{{ item.input_type }}" name="value" placeholder="{{ item.unit }}" required>
         <button type="submit">Set {{ item.key }}</button>
       </form>
@@ -23,7 +24,7 @@
   <h2>{{ group_name }}</h2>
   <div class="card-grid">
     {% for row in group_rows %}
-    <div class="card">
+    <div class="card" id="fact-{{ row.key }}">
       <div class="card-title">
         {{ row.label }}{% if row.protected %} &#128274;{% endif %}
       </div>
@@ -40,10 +41,12 @@
       {% if row.can_edit %}
       <form method="post" action="{{ url_for('routes.confirm_fact', key=row.key) }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ url_for('routes.dashboard') }}">
         <button type="submit" class="small">Confirm still correct</button>
       </form>
       <form method="post" action="{{ url_for('routes.update_fact', key=row.key) }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ url_for('routes.dashboard') }}">
         <input type="text" name="value" placeholder="New value" class="value-input">
         <button type="submit" class="small secondary">Update</button>
       </form>

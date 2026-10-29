@@ -72,7 +72,7 @@ def test_https_post_with_same_origin_referer_succeeds(client, pg_conn, owner_use
         data={"value": "60000", "csrf_token": token},
         headers={"Referer": f"{HTTPS_BASE}/"},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
     assert store.get("income.shannon.paye_salary").value == 60000
 
 
@@ -86,7 +86,7 @@ def test_https_confirm_with_same_origin_referer_succeeds(client, pg_conn, owner_
         data={"csrf_token": token},
         headers={"Referer": f"{HTTPS_BASE}/"},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
 
 
 def test_https_confirm_with_no_referer_still_fails_csrf_not_weakened(client, pg_conn, owner_user_id):

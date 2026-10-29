@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date
 
-from flask import Blueprint, abort, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from . import goals_store, vendor_path  # noqa: F401
@@ -67,6 +67,34 @@ def _safe_next(default_endpoint, **default_kwargs):
     if nxt and nxt.startswith("/goals"):
         return nxt
     return url_for(default_endpoint, **default_kwargs)
+
+
+def _safe_relative_path(raw: str | None) -> str | None:
+    """A same-site relative path only: exactly one leading '/', never '//'
+    or '/\\' (both of which some browsers treat as protocol-relative, i.e.
+    an open redirect to another host), and never a full URL. Returns None
+    if `raw` doesn't satisfy that, so the caller falls back to a known-safe
+    default instead of ever trusting arbitrary client input verbatim."""
+    if not raw:
+        return None
+    if not raw.startswith("/"):
+        return None
+    if raw.startswith("//") or raw.startswith("/\\"):
+        return None
+    if "://" in raw:
+        return None
+    return raw
+
+
+def _fact_redirect_target(key: str) -> str:
+    """Validated `next` (falling back to the Numbers page) plus an anchor
+    to the fact's own card, so a plain HTTP redirect (no JS at all) both
+    returns to where the form was submitted from AND scrolls that fact's
+    card into view — the browser's native #fragment handling does the
+    scrolling, nothing server-side needed beyond the anchor existing in
+    the HTML (see dashboard.html / confirm_stale.html's `id="fact-<key>"`)."""
+    target = _safe_relative_path(request.form.get("next")) or url_for("routes.dashboard")
+    return f"{target}#fact-{key}"
 
 
 def _input_type_for_unit(unit: Unit) -> str:
@@ -172,8 +200,12 @@ def _update_existing_fact_value(key: str, raw_value: str) -> None:
 @bp.route("/facts/<path:key>/confirm", methods=["POST"])
 @login_required
 def confirm_fact(key):
+    # Permission/existence failures (404/403) are NOT validation failures —
+    # they stay hard aborts, never redirected, so a disallowed write still
+    # fails loudly rather than silently bouncing back with a vague flash.
     _confirm_fact_value(key)
-    return "", 204
+    flash("Confirmed", "success")
+    return redirect(_fact_redirect_target(key), code=303)
 
 
 @bp.route("/facts/<path:key>/update", methods=["POST"])
@@ -192,20 +224,33 @@ def update_fact(key):
             abort(403)
         raw_value = request.form.get("value")
         if raw_value is None:
-            abort(400, description="Missing 'value'")
+            flash(f"Couldn't set {key}: a value is required.", "error")
+            return redirect(_fact_redirect_target(key), code=303)
         unit, category, owner = CREATABLE_FACT_SPECS[key]
+        try:
+            value = _coerce_value(unit, raw_value)
+        except (ValueError, TypeError):
+            flash(f"Couldn't set {key}: ‘{raw_value}’ isn't a valid value.", "error")
+            return redirect(_fact_redirect_target(key), code=303)
         new_fact = Fact.create(
-            key=key, value=_coerce_value(unit, raw_value), unit=unit,
+            key=key, value=value, unit=unit,
             source=Source.USER_STATED, category=category, as_of=date.today(),
         )
         store.set(new_fact, owner=owner, entered_by_user_id=int(current_user.id))
-        return "", 204
+        flash("Saved", "success")
+        return redirect(_fact_redirect_target(key), code=303)
 
     raw_value = request.form.get("value")
     if raw_value is None:
-        abort(400, description="Missing 'value'")
-    _update_existing_fact_value(key, raw_value)
-    return "", 204
+        flash(f"Couldn't update {key}: a value is required.", "error")
+        return redirect(_fact_redirect_target(key), code=303)
+    try:
+        _update_existing_fact_value(key, raw_value)
+    except (ValueError, TypeError):
+        flash(f"Couldn't update {key}: ‘{raw_value}’ isn't a valid value.", "error")
+        return redirect(_fact_redirect_target(key), code=303)
+    flash("Saved", "success")
+    return redirect(_fact_redirect_target(key), code=303)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

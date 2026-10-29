@@ -224,7 +224,7 @@ def test_owner_can_write_every_goals_key_over_http_even_when_owner_is_joint(
         f"/facts/{key}/update",
         data={"value": new_raw, "csrf_token": token},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
     assert store.get(key).value == new_expected
 
 
@@ -276,7 +276,7 @@ def test_http_owner_can_create_a_registered_missing_key(client, pg_conn, owner_u
         "/facts/goals.fire.target_date/update",
         data={"value": "2030-10-05", "csrf_token": token},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
     store = PostgresFactStore(pg_conn)
     assert store.get("goals.fire.target_date").value == "2030-10-05"
 

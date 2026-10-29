@@ -574,7 +574,7 @@ def test_owner_can_create_each_registered_key_through_the_not_yet_set_form(clien
         "/facts/goals.fire.target_date/update",
         data={"value": "2030-10-05", "csrf_token": token(page)},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
     assert store.get("goals.fire.target_date").value == "2030-10-05"
 
     page = client.get("/")
@@ -582,7 +582,7 @@ def test_owner_can_create_each_registered_key_through_the_not_yet_set_form(clien
         "/facts/savings.house_deposit.balance/update",
         data={"value": "22000", "csrf_token": token(page)},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
     assert store.get("savings.house_deposit.balance").value == 22000
 
 
@@ -650,7 +650,7 @@ def test_partner_can_update_house_deposit_balance_once_it_exists_but_never_goals
         "/facts/savings.house_deposit.balance/update",
         data={"value": "25000", "csrf_token": token(page)},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 303
     assert store.get("savings.house_deposit.balance").value == 25000
 
     page = client.get("/")
