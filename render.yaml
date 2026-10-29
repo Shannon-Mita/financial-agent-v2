@@ -1,0 +1,27 @@
+# Draft only — Shannon creates and configures the actual Render service.
+# Region: Frankfurt (EU). Neither Render nor Neon offers a literal UK region
+# on their free tiers; EU keeps this UK household's data in-region under
+# GDPR rather than defaulting to a US region.
+services:
+  - type: web
+    name: financial-agent-v2
+    env: python
+    region: frankfurt
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn 'app:create_app()'"
+    envVars:
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: PARTNER_EMAIL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
