@@ -6,6 +6,8 @@ needs a real Postgres, since it exercises login + a real fact write.
 """
 import re
 
+import pytest
+
 from app.store import PostgresFactStore
 from app.vendor_path import ensure_on_path
 
@@ -47,3 +49,24 @@ def test_valid_csrf_token_update_succeeds_end_to_end(app, client, pg_conn, owner
     )
     assert resp.status_code == 204
     assert store.get("income.shannon.paye_salary").value == 60000
+
+
+# ── Every new Stage 1 POST route family, CSRF checked before auth/routing ──
+# resolves anything DB-backed — no session, no pg_conn needed, same as the
+# existing facts-update test above: CSRFProtect's before_request hook rejects
+# the request before the view (or login_required) ever runs.
+
+@pytest.mark.parametrize("path", [
+    "/goals",
+    "/goals/1/edit",
+    "/goals/1/delete",
+    "/goals/1/status",
+    "/tasks",
+    "/tasks/1/edit",
+    "/tasks/1/delete",
+    "/tasks/1/toggle",
+    "/facts/goals.fire.target_date/update",
+])
+def test_every_new_post_route_rejects_missing_csrf_token(client, path):
+    resp = client.post(path, data={"title": "x", "value": "x"})
+    assert resp.status_code == 400

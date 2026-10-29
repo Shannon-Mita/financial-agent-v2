@@ -68,6 +68,14 @@ def _safe_next(default_endpoint, **default_kwargs):
     return url_for(default_endpoint, **default_kwargs)
 
 
+def _input_type_for_unit(unit: Unit) -> str:
+    if unit == Unit.DATE:
+        return "date"
+    if unit in (Unit.GBP, Unit.COUNT, Unit.GBP_PER_YEAR, Unit.GBP_PER_MONTH, Unit.PERCENT):
+        return "number"
+    return "text"
+
+
 @bp.route("/")
 @login_required
 def dashboard():
@@ -92,7 +100,19 @@ def dashboard():
             "can_edit": can_write_fact(current_user.role, fm.owner, key),
         })
 
-    return render_template("dashboard.html", rows=rows, user=current_user)
+    not_yet_set = []
+    if current_user.role == "owner":
+        for key in sorted(CREATABLE_FACT_KEYS):
+            if key in current:
+                continue
+            unit, _category, _owner = CREATABLE_FACT_SPECS[key]
+            not_yet_set.append({
+                "key": key,
+                "unit": unit.value,
+                "input_type": _input_type_for_unit(unit),
+            })
+
+    return render_template("dashboard.html", rows=rows, user=current_user, not_yet_set=not_yet_set)
 
 
 @bp.route("/facts/<path:key>/confirm", methods=["POST"])

@@ -3,6 +3,20 @@
 {% block content %}
   <h1>Household numbers</h1>
 
+  {% if user.role == "owner" and not_yet_set %}
+  <h2>Not yet set</h2>
+  {% for item in not_yet_set %}
+  <div class="card">
+    <div class="card-title">{{ item.key }} &#128274;</div>
+    <form method="post" action="{{ url_for('routes.update_fact', key=item.key) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="{{ item.input_type }}" name="value" placeholder="{{ item.unit }}" required>
+      <button type="submit">Set {{ item.key }}</button>
+    </form>
+  </div>
+  {% endfor %}
+  {% endif %}
+
   {% for row in rows %}
   <div class="card">
     <div class="card-title">

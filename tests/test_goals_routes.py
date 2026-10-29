@@ -519,3 +519,144 @@ def test_goals_list_renders_fire_breakdown_and_feasibility(client, pg_conn, owne
     detail = client.get(f"/goals/{fire_id}")
     assert detail.status_code == 200
     assert "Accessible total" in detail.data.decode()
+
+
+def test_feasibility_card_renders_straight_line_caveat(client, pg_conn, owner_user_id, member_user_id):
+    store = PostgresFactStore(pg_conn)
+    for key, val, unit, cat in [
+        ("income.shannon.paye_salary", 55000, Unit.GBP_PER_YEAR, "income"),
+        ("income.partner.paye_salary", 70000, Unit.GBP_PER_YEAR, "income"),
+        ("cashflow.monthly_essentials", 2000, Unit.GBP_PER_MONTH, "spending"),
+        ("cashflow.monthly_lifestyle", 800, Unit.GBP_PER_MONTH, "spending"),
+        ("cashflow.monthly_childcare", 600, Unit.GBP_PER_MONTH, "spending"),
+        ("cashflow.monthly_other", 200, Unit.GBP_PER_MONTH, "spending"),
+        ("savings.house_deposit.balance", 22000, Unit.GBP, "balance"),
+    ]:
+        store.set(Fact.create(key, val, unit, Source.USER_STATED, cat), owner="joint", entered_by_user_id=owner_user_id)
+
+    goal_id = goals_store.create_goal(
+        pg_conn, title="House deposit", type="target", target_value=70000, target_date="2027-08-29",
+        source_fact_key=None, target_date_fact_key=None,
+        progress_fact_keys=["savings.house_deposit.balance"], cadence_period=None, cadence_amount=None,
+        parent_id=None, assignee_user_ids=[member_user_id], user_id=owner_user_id,
+    )
+
+    login(client, owner_user_id)
+    resp = client.get(f"/goals/{goal_id}")
+    body = resp.data.decode()
+    assert "straight-line" in body
+    assert "no investment growth" in body
+    assert "no inflation" in body
+    assert "no tax on investment gains" in body
+
+
+# ── "Not yet set" section on the Numbers page ─────────────────────────────
+
+def test_owner_sees_not_yet_set_section_with_correct_input_types(client, owner_user_id):
+    login(client, owner_user_id)
+    resp = client.get("/")
+    body = resp.data.decode()
+    assert "Not yet set" in body
+    assert 'action="/facts/goals.fire.target_date/update"' in body
+    assert 'action="/facts/savings.house_deposit.balance/update"' in body
+    # crude but sufficient: the date-typed input appears before the GBP one
+    # closes, i.e. each form has its own correctly-typed input somewhere
+    assert 'type="date"' in body
+    assert 'type="number"' in body
+
+
+def test_owner_can_create_each_registered_key_through_the_not_yet_set_form(client, pg_conn, owner_user_id):
+    store = PostgresFactStore(pg_conn)
+    login(client, owner_user_id)
+
+    page = client.get("/")
+    resp = client.post(
+        "/facts/goals.fire.target_date/update",
+        data={"value": "2030-10-05", "csrf_token": token(page)},
+    )
+    assert resp.status_code == 204
+    assert store.get("goals.fire.target_date").value == "2030-10-05"
+
+    page = client.get("/")
+    resp = client.post(
+        "/facts/savings.house_deposit.balance/update",
+        data={"value": "22000", "csrf_token": token(page)},
+    )
+    assert resp.status_code == 204
+    assert store.get("savings.house_deposit.balance").value == 22000
+
+
+def test_created_key_moves_from_not_yet_set_into_the_normal_list(client, owner_user_id):
+    # "Set <key>" is the not-yet-set form's own button label — unique to
+    # that form (the normal row's buttons say "Confirm still correct" /
+    # "Update"), so its presence/absence unambiguously tells us which
+    # section the key is currently rendered in.
+    login(client, owner_user_id)
+    before = client.get("/").data.decode()
+    assert "Set goals.fire.target_date" in before
+
+    page = client.get("/")
+    client.post(
+        "/facts/goals.fire.target_date/update",
+        data={"value": "2030-10-05", "csrf_token": token(page)},
+    )
+
+    after = client.get("/").data.decode()
+    assert "Set goals.fire.target_date" not in after  # no longer in "Not yet set"
+    assert "goals.fire.target_date" in after          # now in the normal list
+    assert "2030-10-05" in after
+
+
+def test_member_does_not_see_not_yet_set_section_or_its_forms(client, member_user_id):
+    login(client, member_user_id)
+    resp = client.get("/")
+    body = resp.data.decode()
+    assert "Not yet set" not in body
+    assert 'action="/facts/goals.fire.target_date/update"' not in body
+    assert 'action="/facts/savings.house_deposit.balance/update"' not in body
+
+
+def test_member_crafted_post_to_not_yet_set_route_is_403(client, pg_conn, member_user_id):
+    store = PostgresFactStore(pg_conn)
+    login(client, member_user_id)
+    page = client.get("/")
+    resp = client.post(
+        "/facts/goals.fire.target_date/update",
+        data={"value": "2030-10-05", "csrf_token": token(page)},
+    )
+    assert resp.status_code == 403
+    assert store.get("goals.fire.target_date") is None
+
+
+def test_partner_can_update_house_deposit_balance_once_it_exists_but_never_goals_keys(
+    client, pg_conn, owner_user_id, member_user_id
+):
+    store = PostgresFactStore(pg_conn)
+    login(client, owner_user_id)
+    page = client.get("/")
+    client.post(
+        "/facts/savings.house_deposit.balance/update",
+        data={"value": "22000", "csrf_token": token(page)},
+    )
+    page = client.get("/")
+    client.post(
+        "/facts/goals.fire.target_date/update",
+        data={"value": "2030-10-05", "csrf_token": token(page)},
+    )
+
+    login(client, member_user_id)
+    page = client.get("/")
+    resp = client.post(
+        "/facts/savings.house_deposit.balance/update",
+        data={"value": "25000", "csrf_token": token(page)},
+    )
+    assert resp.status_code == 204
+    assert store.get("savings.house_deposit.balance").value == 25000
+
+    page = client.get("/")
+    resp = client.post(
+        "/facts/goals.fire.target_date/update",
+        data={"value": "2031-01-01", "csrf_token": token(page)},
+    )
+    assert resp.status_code == 403
+    assert store.get("goals.fire.target_date").value == "2030-10-05"  # unchanged

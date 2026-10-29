@@ -110,6 +110,11 @@ PAYE_ONLY_CAVEAT = (
     "profit and other income are not included."
 )
 
+STRAIGHT_LINE_CAVEAT = (
+    "This is a straight-line calculation: no investment growth, no "
+    "inflation, and no tax on investment gains are modelled."
+)
+
 _CHILD_INDEX_RE = re.compile(r"^children\.(\d+)\.")
 
 
@@ -195,7 +200,7 @@ def feasibility_for_goal(goal: dict, facts: dict, *, on: date | None = None,
     )
 
     stale = tuple((s.key, s.age_days, s.max_age_days) for s in fresh.stale)
-    caveat = PAYE_ONLY_CAVEAT
+    caveat = PAYE_ONLY_CAVEAT + " " + STRAIGHT_LINE_CAVEAT
     if stale:
         parts = [f"{key} is {age}d old (max {limit}d)" for key, age, limit in
                   sorted(stale, key=lambda s: -s[1])]

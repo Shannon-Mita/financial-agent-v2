@@ -129,6 +129,14 @@ def test_golden_house_deposit_example():
     assert "PAYE salary only" in f.caveat
 
 
+def test_caveat_states_straight_line_no_growth_inflation_or_tax():
+    f = feasibility_for_goal(DEPOSIT_GOAL, base_facts(), on=TODAY, tax_year="2026/27")
+    assert "straight-line" in f.caveat
+    assert "no investment growth" in f.caveat
+    assert "no inflation" in f.caveat
+    assert "no tax on investment gains" in f.caveat
+
+
 def test_not_applicable_for_binary_and_habit_goals():
     for t in ("binary", "habit"):
         f = feasibility_for_goal({"type": t}, base_facts(), on=TODAY)
