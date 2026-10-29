@@ -660,3 +660,138 @@ def test_partner_can_update_house_deposit_balance_once_it_exists_but_never_goals
     )
     assert resp.status_code == 403
     assert store.get("goals.fire.target_date").value == "2030-10-05"  # unchanged
+
+
+# ── Server-side delete-confirmation pages (no inline JS — CSP forbids it) ──
+
+def test_goal_delete_confirm_page_shows_goal_and_consequences(client, pg_conn, owner_user_id, member_user_id):
+    login(client, owner_user_id)
+    goal_id = goals_store.create_goal(
+        pg_conn, title="House deposit", type="target", target_value=70000, target_date="2027-06-30",
+        source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
+        cadence_period=None, cadence_amount=None, parent_id=None,
+        assignee_user_ids=[member_user_id], user_id=owner_user_id,
+    )
+    goals_store.create_task(
+        pg_conn, title="Open a LISA", goal_id=goal_id, assignee_user_id=member_user_id, user_id=owner_user_id,
+    )
+
+    resp = client.get(f"/goals/{goal_id}/delete-confirm")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "House deposit" in body
+    assert "Open a LISA" in body  # the task that would be deleted too
+    assert f'action="{"/goals/%d/delete" % goal_id}"' in body
+    assert "csrf_token" in body
+    assert "Cancel" in body
+
+
+def test_goal_delete_confirm_blocked_when_sub_goals_exist(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    parent_id = goals_store.create_goal(
+        pg_conn, title="Parent", type="binary", target_value=None, target_date=None,
+        source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
+        cadence_period=None, cadence_amount=None, parent_id=None,
+        assignee_user_ids=[], user_id=owner_user_id,
+    )
+    goals_store.create_goal(
+        pg_conn, title="Child", type="binary", target_value=None, target_date=None,
+        source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
+        cadence_period=None, cadence_amount=None, parent_id=parent_id,
+        assignee_user_ids=[], user_id=owner_user_id,
+    )
+
+    resp = client.get(f"/goals/{parent_id}/delete-confirm")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "sub-goal" in body.lower()
+    assert f'action="/goals/{parent_id}/delete"' not in body  # no delete form offered
+
+
+def test_goal_delete_confirm_requires_owner(client, pg_conn, owner_user_id, member_user_id):
+    login(client, owner_user_id)
+    goal_id = goals_store.create_goal(
+        pg_conn, title="Goal", type="binary", target_value=None, target_date=None,
+        source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
+        cadence_period=None, cadence_amount=None, parent_id=None,
+        assignee_user_ids=[], user_id=owner_user_id,
+    )
+    login(client, member_user_id)
+    resp = client.get(f"/goals/{goal_id}/delete-confirm")
+    assert resp.status_code == 403
+
+
+def test_goal_delete_confirm_requires_login(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    goal_id = goals_store.create_goal(
+        pg_conn, title="Goal", type="binary", target_value=None, target_date=None,
+        source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
+        cadence_period=None, cadence_amount=None, parent_id=None,
+        assignee_user_ids=[], user_id=owner_user_id,
+    )
+    with client.session_transaction() as sess:
+        sess.pop("_user_id", None)
+    resp = client.get(f"/goals/{goal_id}/delete-confirm")
+    assert resp.status_code == 302
+
+
+def test_goal_detail_delete_button_links_to_confirm_page_not_a_direct_post(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    goal_id = goals_store.create_goal(
+        pg_conn, title="Goal", type="binary", target_value=None, target_date=None,
+        source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
+        cadence_period=None, cadence_amount=None, parent_id=None,
+        assignee_user_ids=[], user_id=owner_user_id,
+    )
+    body = client.get(f"/goals/{goal_id}").data.decode()
+    assert f'href="/goals/{goal_id}/delete-confirm"' in body
+    assert f'action="/goals/{goal_id}/delete"' not in body  # no direct-delete form on the detail page
+
+
+def test_task_delete_confirm_page_shows_task(client, pg_conn, owner_user_id, member_user_id):
+    login(client, owner_user_id)
+    task_id = goals_store.create_task(
+        pg_conn, title="My task", goal_id=None, assignee_user_id=member_user_id, user_id=owner_user_id,
+    )
+    resp = client.get(f"/tasks/{task_id}/delete-confirm")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "My task" in body
+    assert f'action="/tasks/{task_id}/delete"' in body
+    assert "csrf_token" in body
+    assert "Cancel" in body
+
+
+def test_task_delete_confirm_requires_permission(client, pg_conn, owner_user_id, member_user_id):
+    login(client, owner_user_id)
+    task_id = goals_store.create_task(
+        pg_conn, title="His task", goal_id=None, assignee_user_id=owner_user_id, user_id=owner_user_id,
+    )
+    login(client, member_user_id)
+    resp = client.get(f"/tasks/{task_id}/delete-confirm")
+    assert resp.status_code == 403
+
+
+def test_task_delete_confirm_allows_member_for_her_own_task(client, pg_conn, owner_user_id, member_user_id):
+    login(client, owner_user_id)
+    page = client.get("/goals")
+    client.post("/tasks", data={
+        "csrf_token": token(page), "title": "Hers", "assignee_user_id": str(member_user_id),
+    })
+    login(client, member_user_id)
+    page = client.get("/goals")
+    client.post("/tasks", data={"csrf_token": token(page), "title": "Her own", "assignee_user_id": str(member_user_id)})
+    task_id = [t for t in goals_store.list_tasks(pg_conn) if t["title"] == "Her own"][0]["id"]
+
+    resp = client.get(f"/tasks/{task_id}/delete-confirm")
+    assert resp.status_code == 200
+
+
+def test_goals_list_task_delete_links_to_confirm_page(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    task_id = goals_store.create_task(
+        pg_conn, title="Standalone", goal_id=None, assignee_user_id=owner_user_id, user_id=owner_user_id,
+    )
+    body = client.get("/goals").data.decode()
+    assert f'href="/tasks/{task_id}/delete-confirm"' in body
+    assert f'action="/tasks/{task_id}/delete"' not in body

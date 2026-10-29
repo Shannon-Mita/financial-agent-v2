@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Delete task?{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('routes.goals_list') }}">&larr; Cancel</a></p>
+  <h1>Delete "{{ task.title }}"?</h1>
+
+  <div class="card">
+    <p>This cannot be undone.</p>
+    <form method="post" action="{{ url_for('routes.delete_task', task_id=task.id) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="danger">Delete permanently</button>
+    </form>
+    <a href="{{ url_for('routes.goals_list') }}"><button type="button" class="secondary">Cancel</button></a>
+  </div>
+{% endblock %}

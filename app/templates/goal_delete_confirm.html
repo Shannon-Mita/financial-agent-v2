@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Delete goal?{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('routes.goal_detail', goal_id=goal.id) }}">&larr; Cancel</a></p>
+  <h1>Delete "{{ goal.title }}"?</h1>
+
+  <div class="card">
+    <div class="row"><span class="label">Type</span><span>{{ goal.type }}</span></div>
+
+    {% if blocked %}
+    <p class="caveat">This goal has sub-goals — delete them first before deleting this one.</p>
+    {% else %}
+      {% if tasks %}
+      <p>Deleting this goal will also delete {{ tasks | length }} task{{ "s" if tasks | length != 1 else "" }}:</p>
+      <ul>
+        {% for t in tasks %}<li>{{ t.title }}</li>{% endfor %}
+      </ul>
+      {% else %}
+      <p>This goal has no tasks — nothing else will be deleted with it.</p>
+      {% endif %}
+      <p>This cannot be undone.</p>
+      <form method="post" action="{{ url_for('routes.delete_goal', goal_id=goal.id) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="danger">Delete permanently</button>
+      </form>
+    {% endif %}
+    <a href="{{ url_for('routes.goal_detail', goal_id=goal.id) }}"><button type="button" class="secondary">Cancel</button></a>
+  </div>
+{% endblock %}

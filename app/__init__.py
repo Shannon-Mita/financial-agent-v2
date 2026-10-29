@@ -1,5 +1,7 @@
 from . import vendor_path  # noqa: F401  (must run before any facts_layer/tax_engine import)
 
+from datetime import timedelta
+
 from flask import Flask
 from flask_login import LoginManager
 from flask_wtf import CSRFProtect
@@ -26,6 +28,16 @@ def create_app(config: Config | None = None) -> Flask:
     app.config["SESSION_COOKIE_SECURE"] = cfg.SESSION_COOKIE_SECURE
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+    # Sessions are marked permanent at login (see auth._complete_login) and
+    # last 30 days — long enough neither of you gets nagged to re-login
+    # constantly on a household app, short enough a lost/sold phone isn't
+    # exposed forever. SESSION_REFRESH_EACH_REQUEST defaults to True (not
+    # overridden here), so every request slides the expiry forward again —
+    # 30 days of INACTIVITY signs you out, not 30 days from first login.
+    # Changing SECRET_KEY invalidates every existing session immediately
+    # (see docs/RUNBOOK.md).
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
     db.init_app(app)
 

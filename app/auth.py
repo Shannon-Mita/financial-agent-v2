@@ -46,6 +46,7 @@ def _complete_login(email: str, google_sub: str):
     if role is None:
         abort(403, description="This Google account is not authorised for this app.")
     user = upsert_user(get_conn(), google_sub, email, role)
+    session.permanent = True  # 30-day lifetime (PERMANENT_SESSION_LIFETIME), refreshed on every request
     login_user(user)
     return redirect(url_for("routes.dashboard"))
 

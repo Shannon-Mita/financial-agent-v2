@@ -32,6 +32,12 @@ repo): `SECRET_KEY`, `DATABASE_URL`, `OWNER_EMAIL`, `PARTNER_EMAIL`,
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_COOKIE_SECURE=true`.
 `.env.example` lists the same set for local dev.
 
+**Changing `SECRET_KEY` signs everyone out immediately.** Sessions are
+signed with it, so rotating the key invalidates every existing login the
+instant the new value goes live — both of you will need to sign in again.
+Sessions otherwise last 30 days of inactivity (`PERMANENT_SESSION_LIFETIME`,
+refreshed on every request) before that happens on its own.
+
 ---
 
 ## 2. Running a migration
@@ -60,9 +66,10 @@ instead of in production.
 
 ## 3. Backing up the data
 
-`scripts/export_data.py` dumps every row in `users` and `facts` (the full
-history, not just the latest value per key — that's the point of the
-append-only design) to a timestamped JSON file under `./exports/`.
+`scripts/export_data.py` dumps every row in every table — `users`, the full
+`facts` history (not just the latest value per key — that's the point of
+the append-only design), and Stage 1's `goals`, `goal_assignees`, `tasks`,
+and `audit_log` — to a timestamped JSON file under `./exports/`.
 
 ```
 DATABASE_URL=<your real database URL> python3 scripts/export_data.py
@@ -73,6 +80,10 @@ A successful run prints the output path and a row count per table, e.g.:
 Wrote exports/financial-agent-v2-export-20261029T120000Z.json
 users: 2 rows
 facts: 312 rows
+goals: 6 rows
+goal_assignees: 4 rows
+tasks: 9 rows
+audit_log: 23 rows
 ```
 
 Do this before any migration you're unsure about, before any manual
@@ -86,73 +97,45 @@ financial history in plain JSON, unencrypted.
 
 ## 4. Restoring from a backup
 
-There's no restore *script* yet — only this documented procedure, run by
-hand with the file `export_data.py` produced. If you end up doing this
-often enough that it's worth automating, say so and it's a quick follow-up
-to build (with its own tests, same as everything else).
+`scripts/restore_data.py` takes an export file and restores it into the
+database `DATABASE_URL` points at.
+
+```
+DATABASE_URL=<target database URL> python3 scripts/restore_data.py exports/financial-agent-v2-export-<timestamp>.json
+```
+
+**It only ever restores into an empty database.** Before writing a single
+row, it checks all six tables and refuses immediately — no partial
+changes — if even one of them already has any rows at all:
+```
+Refusing to restore: not empty — users has rows
+```
+This is deliberately a from-empty restore, not a merge and not an
+overwrite. If you need to bring a backup back on top of a database that
+already has data in it, that's a different (and more dangerous) operation
+— stop and think about what you actually want before asking for it.
 
 **When you'd do this:** setting up a fresh database after data loss, or
 seeding a new environment (e.g. a staging database) with real history.
 
 **Steps:**
 
-1. Make sure the target database is empty (a brand-new Neon/Postgres
-   database, not the live one — restoring onto a database that already has
-   rows will violate the `users.email`/`users.google_sub` uniqueness
-   constraints and the facts table's append-only trigger will refuse any
-   attempt to overwrite rather than append).
-2. Apply every migration to it first (§2) — the tables have to exist before
-   anything can be restored into them.
-3. Run this short script, pointing `DATABASE_URL` at the *target* (empty)
-   database and passing the export file as an argument:
-
-   ```python
-   # restore_from_export.py — run once, by hand, not part of the test suite.
-   import json
-   import sys
-
-   import psycopg2
-
-   with open(sys.argv[1]) as f:
-       data = json.load(f)
-
-   conn = psycopg2.connect()  # reads DATABASE_URL from the environment
-   with conn.cursor() as cur:
-       for u in data["users"]:
-           cur.execute(
-               """INSERT INTO users (id, google_sub, email, role, created_at)
-                  VALUES (%(id)s, %(google_sub)s, %(email)s, %(role)s, %(created_at)s)""",
-               u,
-           )
-       # Facts in entered_at order — preserves the real history, not just
-       # the end state, which matters for freshness/audit correctness.
-       for fact in sorted(data["facts"], key=lambda r: r["entered_at"]):
-           cur.execute(
-               """INSERT INTO facts
-                  (key, value_text, value_type, unit, source, category, owner,
-                   as_of, entered_at, note, entered_by_user_id)
-                  VALUES (%(key)s, %(value_text)s, %(value_type)s, %(unit)s, %(source)s,
-                          %(category)s, %(owner)s, %(as_of)s, %(entered_at)s, %(note)s,
-                          %(entered_by_user_id)s)""",
-               fact,
-           )
-       # Re-point the id sequences past the restored rows, since the
-       # explicit ids above bypassed the normal SERIAL default.
-       cur.execute("SELECT setval('users_id_seq', (SELECT MAX(id) FROM users))")
-       cur.execute("SELECT setval('facts_id_seq', (SELECT MAX(id) FROM facts))")
-   conn.commit()
-   print(f"Restored {len(data['users'])} users, {len(data['facts'])} facts.")
+1. Apply every migration to the target database first (§2) — the tables
+   have to exist (and be empty) before anything can be restored into them.
+2. Run the command above.
+3. A successful run prints a row count per table restored, e.g.:
    ```
-
+   Restored users: 2 rows
+   Restored facts: 312 rows
+   Restored goals: 6 rows
+   Restored goal_assignees: 4 rows
+   Restored tasks: 9 rows
+   Restored audit_log: 23 rows
    ```
-   DATABASE_URL=<target database URL> python3 restore_from_export.py exports/financial-agent-v2-export-<timestamp>.json
-   ```
-
 4. Spot-check: log in, confirm a few numbers on the Numbers page match what
    you expect, and check a fact's "as of" date against the original export
    to make sure history came back intact, not just the latest values.
 
-This restores `users` and `facts` only — `goals`, `tasks`, and `audit_log`
-aren't in `export_data.py`'s output yet (it predates Stage 1). If you need
-those backed up and restorable too, that's worth asking for as its own
-small change rather than assuming the steps above cover them.
+The whole restore runs as one transaction — if anything fails partway
+through, nothing is committed and the database is left exactly as empty as
+it started.

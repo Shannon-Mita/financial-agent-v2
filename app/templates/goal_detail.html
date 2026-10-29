@@ -23,10 +23,7 @@
 
     {% if user.role == "owner" %}
     <a href="{{ url_for('routes.edit_goal', goal_id=goal.id) }}"><button type="button" class="small secondary">Edit</button></a>
-    <form method="post" action="{{ url_for('routes.delete_goal', goal_id=goal.id) }}" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="small danger">Delete</button>
-    </form>
+    <a href="{{ url_for('routes.goal_delete_confirm', goal_id=goal.id) }}"><button type="button" class="small danger">Delete</button></a>
     {% endif %}
   </div>
 
@@ -99,11 +96,7 @@
     <label>{{ t.title }}{% if t.assignee_user_id and users.get(t.assignee_user_id) %} — {{ users[t.assignee_user_id].email }}{% endif %}</label>
     {% if t.assignee_user_id == user.id | int or user.role == "owner" %}
     {% if t.created_by_user_id == user.id | int or user.role == "owner" %}
-    <form method="post" action="{{ url_for('routes.delete_task', task_id=t.id) }}" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="next" value="{{ url_for('routes.goal_detail', goal_id=goal.id) }}">
-      <button type="submit" class="small danger">Delete</button>
-    </form>
+    <a href="{{ url_for('routes.task_delete_confirm', task_id=t.id) }}"><button type="button" class="small danger">Delete</button></a>
     {% endif %}
     {% endif %}
   </div>

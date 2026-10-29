@@ -449,6 +449,26 @@ def update_goal(goal_id):
     return redirect(url_for("routes.goal_detail", goal_id=goal_id))
 
 
+@bp.route("/goals/<int:goal_id>/delete-confirm")
+@owner_required
+def goal_delete_confirm(goal_id):
+    """Server-side confirmation page — the CSP forbids inline JS, so this
+    replaces a client-side confirm() dialog with a real page: what would be
+    deleted (the goal's own tasks are cascade-deleted with it), a Cancel
+    link, and the actual delete button only when deletion is actually
+    possible (blocked entirely while sub-goals still exist, same rule as
+    the delete endpoint itself)."""
+    conn = get_conn()
+    goal = goals_store.get_goal(conn, goal_id)
+    if goal is None:
+        abort(404)
+    blocked = goals_store.has_children(conn, goal_id)
+    tasks = goals_store.list_tasks(conn, goal_id=goal_id)
+    return render_template(
+        "goal_delete_confirm.html", user=current_user, goal=goal, blocked=blocked, tasks=tasks,
+    )
+
+
 @bp.route("/goals/<int:goal_id>/delete", methods=["POST"])
 @owner_required
 def delete_goal(goal_id):
@@ -523,6 +543,20 @@ def update_task(task_id):
         conn, task_id, title=title, assignee_user_id=assignee_user_id, user_id=int(current_user.id),
     )
     return redirect(_safe_next("routes.goals_list"))
+
+
+@bp.route("/tasks/<int:task_id>/delete-confirm")
+@login_required
+def task_delete_confirm(task_id):
+    conn = get_conn()
+    task = goals_store.get_task(conn, task_id)
+    if task is None:
+        abort(404)
+    if not can_edit_or_delete_task(
+        current_user.role, int(current_user.id), task["created_by_user_id"], task["assignee_user_id"]
+    ):
+        abort(403)
+    return render_template("task_delete_confirm.html", user=current_user, task=task)
 
 
 @bp.route("/tasks/<int:task_id>/delete", methods=["POST"])
