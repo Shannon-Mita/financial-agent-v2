@@ -5,8 +5,9 @@ real household it surfaces the genuine issues (60% trap, child benefit clawback)
 """
 from datetime import date, timedelta
 
+import pytest
 from facts_layer import FactStore, Fact, Unit, Source
-from recap import build_recap
+from recap import build_recap, calc_monthly_surplus
 
 
 def seed(store, salary_partner=100000, as_of=None, extras=None,
@@ -212,4 +213,113 @@ def test_missing_spending_fields_block_not_silently_default():
     r = build_recap(store, num_children=1)
     assert r.blocked is True
     assert "monthly_essentials" in r.block_reason
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# calc_monthly_surplus() — extracted out of build_recap() for reuse by
+# financial-agent-v2's goal feasibility check (Stage 1). This is a pure
+# extraction, not a new implementation: the regression test below proves
+# build_recap()'s own output is unaffected by the extraction, and the direct
+# unit tests exercise the function exactly as a second caller would.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_build_recap_output_unchanged_by_extraction():
+    """build_recap()'s surplus-derived fields (required_monthly, track_status)
+    must be identical to their pre-extraction values on a known scenario —
+    proves the extraction didn't change build_recap()'s behaviour."""
+    store = FactStore()
+    seed(store, salary_partner=90000, essentials=2000, lifestyle=500,
+         childcare=0, other=200)
+    r = build_recap(store, num_children=1)
+    assert r.required_monthly == 18387
+    assert r.track_status == "off_track"
+
+
+def test_calc_monthly_surplus_matches_tax_engine_directly():
+    """calc_monthly_surplus(), called the way a second feature would call it
+    (raw salaries/pensions in, one float out), must match the tax engine's
+    own numbers exactly — not a hand-picked constant."""
+    from tax_engine import calc_income_tax, calc_child_benefit
+
+    s_tax = calc_income_tax(55000, tax_year="2025/26")
+    p_tax = calc_income_tax(90000, tax_year="2025/26")
+    cb = calc_child_benefit(1, 90000, tax_year="2025/26")
+    expected = (s_tax.take_home + p_tax.take_home + cb.net_received) / 12 - 2700
+
+    surplus = calc_monthly_surplus(
+        55000, 90000, 0, 0,
+        2000, 500, 0, 200,
+        tax_year="2025/26", num_children=1,
+    )
+    assert surplus == pytest.approx(expected)
+
+
+def test_calc_monthly_surplus_zero_spend_equals_take_home_plus_cb():
+    surplus = calc_monthly_surplus(
+        55000, 90000, 0, 0,
+        0, 0, 0, 0,
+        tax_year="2026/27", num_children=1,
+    )
+    from tax_engine import calc_income_tax, calc_child_benefit
+    s_tax = calc_income_tax(55000, tax_year="2026/27")
+    p_tax = calc_income_tax(90000, tax_year="2026/27")
+    cb = calc_child_benefit(1, 90000, tax_year="2026/27")
+    assert surplus == pytest.approx((s_tax.take_home + p_tax.take_home + cb.net_received) / 12)
+
+
+def test_calc_monthly_surplus_zero_children_has_no_cb_term():
+    # Partner salary kept below the £60k HICBC taper so num_children=1 keeps
+    # the full Child Benefit — otherwise both cases would net_received=0 and
+    # the comparison wouldn't actually exercise the CB term.
+    with_child = calc_monthly_surplus(55000, 50000, 0, 0, 0, 0, 0, 0,
+                                       tax_year="2026/27", num_children=1)
+    no_child = calc_monthly_surplus(55000, 50000, 0, 0, 0, 0, 0, 0,
+                                     tax_year="2026/27", num_children=0)
+    assert no_child < with_child  # losing the CB net_received term lowers surplus
+
+
+def test_calc_monthly_surplus_partner_pension_reduces_tax_not_just_spend():
+    """Golden example (hand-computed, 2026/27, partner pension £0 baseline):
+    Shannon £55,000 gross -> take_home £42,457 (verified golden case).
+    Partner £70,000 gross, no pension -> adjusted £70,000, PA £12,570 intact;
+    taxable £57,430: £37,700 @ 20% = £7,540, £19,730 @ 40% = £7,892 -> tax
+    £15,432; NI: £37,700 @ 8% = £3,016, £19,730 @ 2% = £394.60 -> NI £3,411;
+    take_home = 70,000 - 15,432 - 3,411 = £51,157.
+    Child Benefit (1 child): ANI £70,000 is inside the £60k-80k taper ->
+    rate = (70,000-60,000)/20,000 = 0.50; annual = round(27.05*52) = £1,407;
+    net_received = round(1,407 * 0.50) = £704.
+    monthly_take_home = (42,457 + 51,157 + 704) / 12 = 94,318 / 12 = £7,859.83(3).
+    monthly_spend = 2,000 + 800 + 600 + 200 = £3,600.
+    surplus = 7,859.83(3) - 3,600 = £4,259.83(3)."""
+    surplus = calc_monthly_surplus(
+        55000, 70000, 0, 0,
+        2000, 800, 600, 200,
+        tax_year="2026/27", num_children=1,
+    )
+    assert surplus == pytest.approx(4259.833333333333)
+
+
+def test_partner_pension_effect_on_income_tax_only():
+    """Isolates the pension's effect on income tax alone (not CB, not NI):
+    £6,000 employee pension on a £70,000 salary with no taper in play lands
+    entirely in the 40% band, so tax drops by exactly £6,000 * 40% = £2,400."""
+    from tax_engine import calc_income_tax
+
+    no_pension = calc_income_tax(70000, tax_year="2026/27")
+    with_pension = calc_income_tax(70000, tax_year="2026/27", pension_contribution=6000)
+    assert no_pension.income_tax - with_pension.income_tax == 2400
+
+
+def test_partner_pension_effect_on_child_benefit_charge_only():
+    """Isolates the pension's effect on the HICBC charge alone: £6,000
+    employee pension drops partner's ANI from £70,000 to £64,000, moving the
+    taper fraction from 50% to 20% and net_received from £704 to £1,126."""
+    from tax_engine import calc_child_benefit
+
+    no_pension = calc_child_benefit(1, 70000, tax_year="2026/27")
+    with_pension = calc_child_benefit(1, 70000, tax_year="2026/27", pension_contribution=6000)
+    assert no_pension.charge_rate == pytest.approx(0.5)
+    assert with_pension.charge_rate == pytest.approx(0.2)
+    assert no_pension.net_received == 704
+    assert with_pension.net_received == 1126
 

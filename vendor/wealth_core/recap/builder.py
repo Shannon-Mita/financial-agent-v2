@@ -98,6 +98,37 @@ def _n(v) -> float:
         return 0.0
 
 
+def calc_monthly_surplus(
+    s_salary: float,
+    p_salary: float,
+    s_pension_annual: float,
+    p_pension_annual: float,
+    monthly_essentials: float,
+    monthly_lifestyle: float,
+    monthly_childcare: float,
+    monthly_other: float,
+    *,
+    tax_year: str,
+    num_children: int = 1,
+) -> float:
+    """Monthly household surplus: both earners' take-home plus net Child
+    Benefit, minus the four recorded monthly spending categories. Always
+    DERIVED here, never stored — see module docstring on why that matters.
+
+    Extracted out of build_recap() (previously inlined) so other features
+    (e.g. financial-agent-v2's goal feasibility check) call this one
+    implementation instead of recomputing the same formula independently.
+    Pulled out verbatim — no formula change.
+    """
+    s_tax = calc_income_tax(s_salary, tax_year=tax_year, pension_contribution=s_pension_annual)
+    p_tax = calc_income_tax(p_salary, tax_year=tax_year, pension_contribution=p_pension_annual)
+    cb = calc_child_benefit(num_children, p_salary, tax_year=tax_year,
+                            pension_contribution=p_pension_annual)
+    monthly_take_home = (s_tax.take_home + p_tax.take_home + cb.net_received) / 12
+    monthly_spend = monthly_essentials + monthly_lifestyle + monthly_childcare + monthly_other
+    return monthly_take_home - monthly_spend
+
+
 # Facts the recap needs to compute a household position. If any are stale/missing
 # the gate blocks and asks for exactly these.
 REQUIRED_KEYS = [
@@ -157,24 +188,27 @@ def build_recap(
     fire_target = _n(fv("goals", "fire", "target_number")) or 4500000
     fire_progress = min(100, round(net_worth / fire_target * 100)) if fire_target else 0
 
-    # Compute both incomes' tax positions once — reused for the 60% check and
-    # the Child Benefit check below, AND to derive the real monthly surplus.
+    # Partner's tax position and Child Benefit are also needed directly below
+    # (60% trap check, clawback check) — computed again here even though
+    # calc_monthly_surplus() computes its own internally; both are cheap, pure,
+    # deterministic calls, so the small duplication buys calc_monthly_surplus
+    # being independently callable elsewhere without reaching into build_recap.
+    p_tax = calc_income_tax(p_salary, tax_year=tax_year, pension_contribution=p_pension)
+    cb = calc_child_benefit(num_children, p_salary, tax_year=tax_year,
+                            pension_contribution=p_pension)
+
     # Surplus was previously read from a fact ("cashflow.monthly_surplus") that
     # nothing ever wrote — it silently defaulted to zero. It is now always
     # DERIVED here, never stored, so it can never drift from the income/spending
     # facts it depends on.
-    s_tax = calc_income_tax(s_salary, tax_year=tax_year, pension_contribution=s_pension)
-    p_tax = calc_income_tax(p_salary, tax_year=tax_year, pension_contribution=p_pension)
-    cb = calc_child_benefit(num_children, p_salary, tax_year=tax_year,
-                            pension_contribution=p_pension)
-    monthly_take_home = (s_tax.take_home + p_tax.take_home + cb.net_received) / 12
-    monthly_spend = (
-        _n(fv("cashflow", "monthly_essentials"))
-        + _n(fv("cashflow", "monthly_lifestyle"))
-        + _n(fv("cashflow", "monthly_childcare"))
-        + _n(fv("cashflow", "monthly_other"))
+    monthly_surplus = calc_monthly_surplus(
+        s_salary, p_salary, s_pension, p_pension,
+        _n(fv("cashflow", "monthly_essentials")),
+        _n(fv("cashflow", "monthly_lifestyle")),
+        _n(fv("cashflow", "monthly_childcare")),
+        _n(fv("cashflow", "monthly_other")),
+        tax_year=tax_year, num_children=num_children,
     )
-    monthly_surplus = monthly_take_home - monthly_spend
 
     # FIRE track status via the objective projection.
     target_years = _n(fv("goals", "fire", "target_years")) or 10
