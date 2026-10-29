@@ -23,7 +23,7 @@ def test_security_headers_present_on_unauthenticated_response(client):
     resp = client.get("/login")
     assert resp.headers["X-Content-Type-Options"] == "nosniff"
     assert resp.headers["X-Frame-Options"] == "DENY"
-    assert resp.headers["Referrer-Policy"] == "no-referrer"
+    assert resp.headers["Referrer-Policy"] == "same-origin"
     assert "frame-ancestors 'none'" in resp.headers["Content-Security-Policy"]
     assert "script-src 'self'" in resp.headers["Content-Security-Policy"]
     assert "'unsafe-inline'" not in resp.headers["Content-Security-Policy"]

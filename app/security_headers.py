@@ -29,7 +29,7 @@ def init_app(app):
     def _add_security_headers(resp):
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["X-Frame-Options"] = "DENY"
-        resp.headers["Referrer-Policy"] = "no-referrer"
+        resp.headers["Referrer-Policy"] = "same-origin"
         resp.headers["Content-Security-Policy"] = CSP
         # current_user is always available via Flask-Login's request-bound
         # proxy, even for routes with no @login_required — checking it here
