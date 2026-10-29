@@ -6,3 +6,7 @@ venv/
 .venv/
 exports/
 *.db
+
+*.db
+exports/
+.venv/

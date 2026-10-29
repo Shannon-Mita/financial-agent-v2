@@ -15,10 +15,15 @@ VALID_FACT_OWNERS = ("shannon", "partner", "joint")
 
 # Exact keys or dotted-prefixes that only the owner role may write, no matter
 # which `owner` the fact itself is tagged with. Extend this list, don't bypass
-# it, as goal/plan keys are added in Stage 1.
+# it, as new goal/plan keys are added.
+#
+# "goals." covers every migrated goal key (goals.fire.*, goals.net_worth.*,
+# and any added later) — these load as owner=joint in Stage 0 but must stay
+# owner-only to write, same rationale as fire.target/plan. above.
 PROTECTED_KEY_PREFIXES = (
     "fire.target",
     "plan.",
+    "goals.",
 )
 
 

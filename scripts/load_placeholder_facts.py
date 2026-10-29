@@ -18,11 +18,21 @@ Review that report, especially any discrepancies it flags, before running it
 for real (drop --dry-run) and then pointing this script at the resulting
 --new file.
 
-Owner inference: a key's second dotted segment is checked against "shannon"
-and "partner" literally (e.g. "income.shannon.paye_salary" -> shannon); any
-other key (e.g. "property.main.value") is loaded as "joint" — review the
+Owner inference: every dotted segment of the key is checked, left to right,
+against "shannon" and "partner" literally; the first match found is the
+owner (e.g. "income.shannon.paye_salary" -> shannon, and
+"legacy.income.shannon.bonusTiming" -> shannon too, even though "shannon" is
+the third segment there, not the second). A key with neither segment
+anywhere (e.g. "property.main.value") is loaded as "joint" — review the
 printed owner assignment before confirming, and re-run with --dry-run if any
 look wrong; this script does not guess beyond that one rule.
+
+Exclusion: --exclude-prefix skips any key starting with the given dotted
+prefix (repeatable). It defaults to just "legacy." so a Stage 0 run only
+loads the curated facts (currently 47) and leaves the uncurated passthrough
+behind; pass --exclude-prefix explicitly to change what's excluded (it
+replaces the default, it doesn't add to it), or --exclude-prefix "" to
+exclude nothing and load everything in the sqlite file.
 
 A successful real run prints one line per fact loaded, ending with
 "Loaded N facts for <email>." and exits 0. --dry-run prints the same lines
@@ -41,12 +51,34 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from facts_layer import FactStore  # noqa: E402  (sqlite reader for the migrated file)
 from app.store import PostgresFactStore  # noqa: E402
 
+DEFAULT_EXCLUDE_PREFIXES = ("legacy.",)
+
 
 def infer_owner(key: str) -> str:
-    parts = key.split(".")
-    if len(parts) >= 2 and parts[1] in ("shannon", "partner"):
-        return parts[1]
+    for part in key.split("."):
+        if part in ("shannon", "partner"):
+            return part
     return "joint"
+
+
+def resolve_exclude_prefixes(raw_prefixes):
+    """Turn the raw --exclude-prefix values (None if the flag was never
+    passed) into the tuple of prefixes actually used for filtering.
+
+    argparse's `action="append"` appends onto whatever `default` is, so a
+    plain `default=DEFAULT_EXCLUDE_PREFIXES` would mean any explicit
+    --exclude-prefix ADDS to "legacy." instead of replacing it. We default
+    the argument to None instead, and only fall back to
+    DEFAULT_EXCLUDE_PREFIXES here, when the flag was never used at all —
+    so one explicit --exclude-prefix "" cleanly means "exclude nothing".
+    """
+    if raw_prefixes is None:
+        return DEFAULT_EXCLUDE_PREFIXES
+    return tuple(p for p in raw_prefixes if p)
+
+
+def is_excluded(key: str, exclude_prefixes) -> bool:
+    return any(key.startswith(p) for p in exclude_prefixes)
 
 
 def main():
@@ -56,7 +88,17 @@ def main():
     parser.add_argument("--entered-by-email", default=os.environ.get("OWNER_EMAIL"),
                          help="Must already have a users row (sign in once first)")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--exclude-prefix", dest="exclude_prefixes", action="append", default=None,
+        help=(
+            "Dotted key prefix to skip loading (repeatable). Defaults to "
+            f"{list(DEFAULT_EXCLUDE_PREFIXES)!r} (Stage 0: curated facts only). "
+            "Passing this flag replaces that default rather than adding to "
+            "it — pass --exclude-prefix '' to exclude nothing."
+        ),
+    )
     args = parser.parse_args()
+    exclude_prefixes = resolve_exclude_prefixes(args.exclude_prefixes)
 
     if not args.database_url:
         sys.exit("No --database-url given and DATABASE_URL is not set.")
@@ -84,16 +126,25 @@ def main():
 
     dest_store = PostgresFactStore(pg_conn)
 
+    loaded = 0
+    skipped = 0
     for key, fact in sorted(facts.items()):
+        if is_excluded(key, exclude_prefixes):
+            skipped += 1
+            continue
         owner = infer_owner(key)
         print(f"  {key} = {fact.value!r} (as_of={fact.as_of}, owner={owner})")
         if not args.dry_run:
             dest_store.set(fact, owner=owner, entered_by_user_id=entered_by_user_id)
+        loaded += 1
+
+    if exclude_prefixes:
+        print(f"Excluded {skipped} fact(s) matching prefix(es): {', '.join(exclude_prefixes)}")
 
     if args.dry_run:
         print("Dry run — nothing written.")
     else:
-        print(f"Loaded {len(facts)} facts for {args.entered_by_email}.")
+        print(f"Loaded {loaded} facts for {args.entered_by_email}.")
 
 
 if __name__ == "__main__":
