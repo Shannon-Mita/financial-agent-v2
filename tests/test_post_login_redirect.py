@@ -189,18 +189,18 @@ def test_login_consumes_next_via_the_shared_get_capable_validator(app):
     )
 
 
-# ── Friendlier expired-session message ────────────────────────────────────
+# ── Friendlier login-required message (covers expired AND never-logged-in) ─
 
-def test_login_manager_message_is_friendly_about_session_expiry(app):
-    assert app.login_manager.login_message == "Your session expired — please sign in again."
+def test_login_manager_message_does_not_assume_a_prior_session(app):
+    assert app.login_manager.login_message == "Please sign in to continue."
     assert app.login_manager.login_message_category == "error"
 
 
-def test_expired_session_flash_renders_on_the_page_after_signing_back_in(client, pg_conn, owner_user_id):
-    """End to end: the flash Flask-Login sets when it bounces an expired
-    session to /login actually survives the whole round trip and renders,
-    in our existing flash styling, on the page the user lands on once
-    they've signed back in."""
+def test_login_required_flash_renders_on_the_page_after_signing_back_in(client, pg_conn, owner_user_id):
+    """End to end: the flash Flask-Login sets when it bounces an
+    unauthenticated request to /login actually survives the whole round
+    trip and renders, in our existing flash styling, on the page the user
+    lands on once they've signed in."""
     token = _get_a_real_csrf_token_then_expire_login_only(client, owner_user_id)
 
     resp = client.post("/goals", data={"csrf_token": token})
@@ -211,5 +211,5 @@ def test_expired_session_flash_renders_on_the_page_after_signing_back_in(client,
     final_page = client.get(callback_resp.headers["Location"])
 
     body = final_page.data.decode()
-    assert "Your session expired" in body
+    assert "Please sign in to continue." in body
     assert 'class="flash error"' in body

@@ -45,10 +45,10 @@ def create_app(config: Config | None = None) -> Flask:
     login_manager.login_view = "auth.login"
     # Flask-Login's own default ("Please log in to access this page.") is
     # shown whenever @login_required bounces a request with no valid
-    # session — in practice for this app, almost always an expired login
-    # rather than a first-ever visit. Friendlier wording, and "error" so it
-    # renders with the same styling our own flash messages already use.
-    login_manager.login_message = "Your session expired — please sign in again."
+    # session — that's both an expired login AND a first-ever visit, and
+    # this wording doesn't assume which. "error" so it renders with the
+    # same styling our own flash messages already use.
+    login_manager.login_message = "Please sign in to continue."
     login_manager.login_message_category = "error"
 
     @login_manager.user_loader
