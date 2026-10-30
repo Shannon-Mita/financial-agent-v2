@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Household numbers{% endblock %}
 {% block content %}
+  {% set flashed = get_flashed_messages(with_categories=true) %}
+  {% macro fact_flash(key) %}
+    {% for category, message in flashed %}
+      {% if category.endswith('|fact|' + key) %}
+      <div class="flash {{ category.split('|')[0] }} inline-note">{{ message }}</div>
+      {% endif %}
+    {% endfor %}
+  {% endmacro %}
   <h1>Household numbers</h1>
 
   {% if user.role == "owner" and not_yet_set %}
@@ -8,6 +16,7 @@
   <div class="card-grid">
     {% for item in not_yet_set %}
     <div class="card" id="fact-{{ item.key }}">
+      {{ fact_flash(item.key) }}
       <div class="card-title">{{ item.key }} &#128274;</div>
       <form method="post" action="{{ url_for('routes.update_fact', key=item.key) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -25,6 +34,7 @@
   <div class="card-grid">
     {% for row in group_rows %}
     <div class="card" id="fact-{{ row.key }}">
+      {{ fact_flash(row.key) }}
       <div class="card-title">
         {{ row.label }}{% if row.protected %} &#128274;{% endif %}
       </div>

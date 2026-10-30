@@ -111,15 +111,35 @@ nav a { font-weight: 600; }
   margin-top: 0.35rem;
 }
 
-.flashes { margin-bottom: 0.75rem; }
+/* Fixed to the viewport, not just the top of the page content — scrolling
+   to a fact's anchor (#fact-<key>) must never carry the message out of
+   view before the user's eye gets there. See .flash.inline-note below for
+   the second copy shown inside the fact's own card, for the same reason. */
+.flashes {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  margin: 0;
+  padding: 0.6rem 0.75rem 0;
+}
 .flash {
+  max-width: 1100px;
+  margin: 0 auto 0.5rem;
   padding: 0.6rem 0.9rem;
   border-radius: 8px;
-  margin-bottom: 0.5rem;
   font-size: 0.95rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 }
 .flash.success { background: #d9f2e3; color: #0a5; }
 .flash.error { background: #fde2e1; color: #a12; }
+
+.flash.inline-note {
+  margin: 0 0 0.5rem;
+  box-shadow: none;
+  font-size: 0.85rem;
+}
 
 .task {
   display: flex;

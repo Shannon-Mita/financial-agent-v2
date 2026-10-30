@@ -34,7 +34,7 @@
     {% if messages %}
     <div class="flashes">
       {% for category, message in messages %}
-      <div class="flash {{ category }}">{{ message }}</div>
+      <div class="flash {{ category.split('|')[0] }}">{{ message }}</div>
       {% endfor %}
     </div>
     {% endif %}

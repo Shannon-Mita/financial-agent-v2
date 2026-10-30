@@ -5,11 +5,14 @@ server-side via app.permissions — never trust a hidden/disabled button.
 """
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from datetime import date
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from werkzeug.exceptions import MethodNotAllowed, NotFound
+from werkzeug.routing import RequestRedirect
 
 from . import goals_store, vendor_path  # noqa: F401
 from facts_layer import Fact, Source, Unit, check_freshness
@@ -49,32 +52,79 @@ def _store() -> PostgresFactStore:
     return PostgresFactStore(get_conn())
 
 
+def _parse_gbp(raw: str) -> float:
+    """Pounds AND pence — not whole pounds. A real mortgage balance (or any
+    money fact) naturally carries pence, e.g. 381150.09. Accepts a leading
+    £, surrounding whitespace, and thousands commas (a human typing
+    '£381,150.09' or ' 22000 ' means the same thing as '381150.09'), but
+    never silently accepts something that isn't a real, sane amount of
+    money — NaN, +/-inf, and negative amounts all raise, not round away to
+    something plausible-looking. Stored rounded to 2 decimal places, since
+    a third decimal place of a pound amount isn't a real penny."""
+    cleaned = raw.strip()
+    if cleaned.startswith("£"):
+        cleaned = cleaned[1:]
+    cleaned = cleaned.replace(",", "").strip()
+    value = float(cleaned)  # raises ValueError for 'abc', '', etc.
+    if not math.isfinite(value):
+        raise ValueError(f"not a finite amount: {raw!r}")
+    if value < 0:
+        raise ValueError(f"negative amount not allowed: {raw!r}")
+    return round(value, 2)
+
+
 def _coerce_value(unit: Unit, raw: str):
     if unit == Unit.BOOL:
         return raw.strip().lower() in ("1", "true", "yes", "on")
-    if unit in (Unit.GBP, Unit.COUNT):
+    if unit == Unit.GBP:
+        return _parse_gbp(raw)
+    if unit == Unit.COUNT:
         return int(raw)
     if unit in (Unit.GBP_PER_YEAR, Unit.GBP_PER_MONTH, Unit.PERCENT):
         return float(raw)
     return raw  # DATE (ISO string), TEXT
 
 
+def _get_allowed(path: str) -> bool:
+    """True only if a GET to this exact path would be routed straight to a
+    real view — False for a path that matches no route at all, matches
+    only non-GET methods (the 405 this whole check exists to prevent), or
+    would need an internal redirect to match (e.g. a strict-slashes
+    trailing-slash mismatch) — none of those are a redirect target we
+    should ever hand a browser as the follow-up to a POST."""
+    adapter = current_app.url_map.bind(current_app.config.get("SERVER_NAME") or "localhost")
+    try:
+        adapter.match(path, method="GET")
+        return True
+    except (MethodNotAllowed, NotFound, RequestRedirect):
+        return False
+
+
 def _safe_next(default_endpoint, **default_kwargs):
     """Redirect target for goal/task POSTs — only ever one of our own
     /goals* paths (rendered by our own templates' hidden `next` field), not
-    arbitrary client input, so no open-redirect risk."""
+    arbitrary client input, so no open-redirect risk — AND the matched
+    route must actually accept GET, or a browser following this redirect
+    would 405 (e.g. a crafted next of /goals/<id>/delete or /goals/<id>/status,
+    both POST-only but '/goals'-prefixed)."""
     nxt = request.form.get("next")
     if nxt and nxt.startswith("/goals"):
-        return nxt
+        path_only = nxt.split("#", 1)[0].split("?", 1)[0]
+        if _get_allowed(path_only):
+            return nxt
     return url_for(default_endpoint, **default_kwargs)
 
 
 def _safe_relative_path(raw: str | None) -> str | None:
     """A same-site relative path only: exactly one leading '/', never '//'
     or '/\\' (both of which some browsers treat as protocol-relative, i.e.
-    an open redirect to another host), and never a full URL. Returns None
-    if `raw` doesn't satisfy that, so the caller falls back to a known-safe
-    default instead of ever trusting arbitrary client input verbatim."""
+    an open redirect to another host), and never a full URL — AND the
+    matched route must actually accept GET, or a browser following the
+    redirect we build from this would 405 (e.g. a crafted next of another
+    fact's /confirm or /update URL, or any other POST-only route). Returns
+    None if `raw` doesn't satisfy all of that, so the caller falls back to
+    a known-safe default instead of ever trusting arbitrary client input
+    verbatim."""
     if not raw:
         return None
     if not raw.startswith("/"):
@@ -82,6 +132,9 @@ def _safe_relative_path(raw: str | None) -> str | None:
     if raw.startswith("//") or raw.startswith("/\\"):
         return None
     if "://" in raw:
+        return None
+    path_only = raw.split("#", 1)[0].split("?", 1)[0]
+    if not _get_allowed(path_only):
         return None
     return raw
 
@@ -197,6 +250,16 @@ def _update_existing_fact_value(key: str, raw_value: str) -> None:
     store.set(new_fact, owner=fm.owner, entered_by_user_id=int(current_user.id))
 
 
+def _flash_fact(message: str, level: str, key: str) -> None:
+    """Encodes which fact a flash belongs to into the category (parsed back
+    apart in base.html/dashboard.html/confirm_stale.html), so the message
+    can be shown both in the sticky top banner AND inside that fact's own
+    card — the anchor scroll lands you on the card, so the message needs
+    to actually be there too, not just at the top where it's easy to miss
+    having already scrolled past."""
+    flash(message, f"{level}|fact|{key}")
+
+
 @bp.route("/facts/<path:key>/confirm", methods=["POST"])
 @login_required
 def confirm_fact(key):
@@ -204,7 +267,7 @@ def confirm_fact(key):
     # they stay hard aborts, never redirected, so a disallowed write still
     # fails loudly rather than silently bouncing back with a vague flash.
     _confirm_fact_value(key)
-    flash("Confirmed", "success")
+    _flash_fact("Confirmed", "success", key)
     return redirect(_fact_redirect_target(key), code=303)
 
 
@@ -224,32 +287,32 @@ def update_fact(key):
             abort(403)
         raw_value = request.form.get("value")
         if raw_value is None:
-            flash(f"Couldn't set {key}: a value is required.", "error")
+            _flash_fact(f"Couldn't set {key}: a value is required.", "error", key)
             return redirect(_fact_redirect_target(key), code=303)
         unit, category, owner = CREATABLE_FACT_SPECS[key]
         try:
             value = _coerce_value(unit, raw_value)
         except (ValueError, TypeError):
-            flash(f"Couldn't set {key}: ‘{raw_value}’ isn't a valid value.", "error")
+            _flash_fact(f"Couldn't set {key}: ‘{raw_value}’ isn't a valid value.", "error", key)
             return redirect(_fact_redirect_target(key), code=303)
         new_fact = Fact.create(
             key=key, value=value, unit=unit,
             source=Source.USER_STATED, category=category, as_of=date.today(),
         )
         store.set(new_fact, owner=owner, entered_by_user_id=int(current_user.id))
-        flash("Saved", "success")
+        _flash_fact("Saved", "success", key)
         return redirect(_fact_redirect_target(key), code=303)
 
     raw_value = request.form.get("value")
     if raw_value is None:
-        flash(f"Couldn't update {key}: a value is required.", "error")
+        _flash_fact(f"Couldn't update {key}: a value is required.", "error", key)
         return redirect(_fact_redirect_target(key), code=303)
     try:
         _update_existing_fact_value(key, raw_value)
     except (ValueError, TypeError):
-        flash(f"Couldn't update {key}: ‘{raw_value}’ isn't a valid value.", "error")
+        _flash_fact(f"Couldn't update {key}: ‘{raw_value}’ isn't a valid value.", "error", key)
         return redirect(_fact_redirect_target(key), code=303)
-    flash("Saved", "success")
+    _flash_fact("Saved", "success", key)
     return redirect(_fact_redirect_target(key), code=303)
 
 

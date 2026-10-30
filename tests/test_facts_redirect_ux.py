@@ -245,3 +245,29 @@ def test_unknown_key_update_is_still_a_hard_404_not_redirected(client, pg_conn, 
     )
     assert resp.status_code == 404
     assert "Location" not in resp.headers
+
+
+# ── GBP validation failures show a visible error, through the real route ──
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("bad_value", ["abc", "", "-5", "nan"])
+def test_invalid_gbp_value_shows_a_visible_error_not_a_silent_no_op(client, pg_conn, owner_user_id, bad_value):
+    store = seed(pg_conn, owner_user_id)  # property-free seed: income.shannon.paye_salary, GBP_PER_YEAR
+    store.set(
+        Fact.create("property.main.mortgage_balance", 375000, Unit.GBP, Source.USER_STATED, "mortgage"),
+        owner="joint", entered_by_user_id=owner_user_id,
+    )
+    login(client, owner_user_id)
+    page = client.get("/")
+    resp = client.post(
+        "/facts/property.main.mortgage_balance/update",
+        data={"value": bad_value, "next": "/", "csrf_token": token(page)},
+    )
+    assert resp.status_code == 303  # redirect, not a bare 400/500
+    followed = client.get(resp.headers["Location"])
+    body = followed.data.decode()
+    assert "flash error" in body or 'class="flash error' in body
+    assert "isn&#39;t a valid value" in body or "isn't a valid value" in body
+    assert store.get("property.main.mortgage_balance").value == 375000  # unchanged
