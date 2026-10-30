@@ -173,10 +173,13 @@ def test_no_code_path_derives_next_from_the_request_itself():
                 continue
             path = os.path.join(root, name)
             with open(path) as f:
-                content = f.read()
-            for needle in ("request.path", "request.url", "request.referrer"):
-                if needle in content:
-                    offenders.append((path, needle))
+                lines = f.readlines()
+            for lineno, line in enumerate(lines, 1):
+                code = line.split("#", 1)[0]  # ignore comments — this is a
+                # code-usage check, not a "never even mention it in prose" one
+                for needle in ("request.path", "request.url", "request.referrer"):
+                    if needle in code:
+                        offenders.append((path, lineno, needle))
 
     assert offenders == [], f"found request-derived redirect input: {offenders}"
 
