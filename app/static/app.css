@@ -91,6 +91,10 @@ nav a { font-weight: 600; }
   .card-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* The FIRE apex goal stands alone, not squeezed into a multi-column grid
+   alongside its own milestones — single full-width column at any size. */
+.card-grid.apex { grid-template-columns: 1fr; max-width: 480px; }
+
 .badge {
   display: inline-block;
   font-size: 0.75rem;

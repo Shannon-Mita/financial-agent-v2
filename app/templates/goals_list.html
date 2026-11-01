@@ -50,20 +50,33 @@
     <p class="caveat">Can't compute — missing: {{ g.feasibility.missing_keys | join(", ") }}</p>
     {% endif %}
   </div>
-  {% for child in by_parent.get(g.id, []) %}
+  {% set children = by_parent.get(g.id, []) %}
+  {% if children and sub is false and g.id == (fire_goal.id if fire_goal else -1) %}
+  <h2 class="milestones-label">Milestones</h2>
+  {% endif %}
+  {% for child in children %}
     {{ goal_card(child, sub=True) }}
   {% endfor %}
   {% endmacro %}
 
+  {% if fire_goal %}
+  <h2>FIRE</h2>
+  <div class="card-grid apex">
+    <div class="grid-cell">
+      {{ goal_card(fire_goal) }}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="card-grid">
-    {% for g in top_level_goals %}
+    {% for g in other_top_level_goals %}
     <div class="grid-cell">
       {{ goal_card(g) }}
     </div>
     {% endfor %}
   </div>
 
-  {% if not top_level_goals %}
+  {% if not fire_goal and not other_top_level_goals %}
   <p class="readonly-note">No goals yet.</p>
   {% endif %}
 

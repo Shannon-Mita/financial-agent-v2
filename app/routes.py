@@ -464,12 +464,18 @@ def goals_list():
     fire_goal = next((g for g in goals if g["source_fact_key"] == FIRE_TARGET_KEY), None)
     fire_breakdown = fire_accessible_breakdown(facts) if fire_goal else None
 
+    # FIRE is the one real apex goal — its own top-level peers (if any)
+    # render separately from it, so it doesn't look like just another card
+    # next to the milestones that actually belong underneath it.
+    top_level_goals = by_parent[None]
+    other_top_level_goals = [g for g in top_level_goals if not fire_goal or g["id"] != fire_goal["id"]]
+
     standalone_tasks = [t for t in goals_store.list_tasks(conn) if t["goal_id"] is None]
     users = {u["id"]: u for u in goals_store.list_users(conn)}
 
     return render_template(
         "goals_list.html", user=current_user,
-        top_level_goals=by_parent[None], by_parent=by_parent,
+        fire_goal=fire_goal, other_top_level_goals=other_top_level_goals, by_parent=by_parent,
         standalone_tasks=standalone_tasks, users=users,
         fire_breakdown=fire_breakdown,
     )
