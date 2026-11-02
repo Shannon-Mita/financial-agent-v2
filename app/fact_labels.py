@@ -79,6 +79,9 @@ FACT_LABELS: dict[str, str] = {
     "goals.fire.target_number": "FIRE target number",
     "goals.fire.target_date": "FIRE target date",
     "goals.net_worth.target_amount": "Net worth target",
+    "goals.net_worth.target_date": "Net worth target date",
+    "goals.passive_income.target_amount": "Passive income target",
+    "goals.passive_income.target_date": "Passive income target date",
 
     # Other (profile — not income/spending/savings/pensions/property/goals)
     "children.0.child_benefit_claiming": "Child 1 — claiming Child Benefit",
@@ -101,6 +104,19 @@ CATEGORY_GROUPS: dict[str, str] = {
     "goal": "Goals",
 }
 DEFAULT_GROUP = "Other"
+
+# FIRE is retired as the apex goal (Stage 2 Step 3, 2 Nov 2026) — net worth
+# and passive income replace it. Hidden from the Numbers page means not
+# shown or used, never deleted: facts are append-only, their history
+# stays. Purely a display filter, like everything else in this module.
+HIDDEN_KEYS = frozenset({
+    "goals.fire.target_number",
+    "goals.fire.swr",
+    "goals.fire.target_age",
+    "goals.fire.target_years",
+    "goals.fire.target_monthly_income",
+    "goals.fire.target_date",
+})
 
 # Display order for the groups on the page — fixed, not alphabetical, so
 # the most load-bearing numbers (income, spending) surface first.

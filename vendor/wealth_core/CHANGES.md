@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-11-02 (second entry)
+
+### ADD: `recap.calc_net_worth()`
+
+Pure `assets_total - debts_total`, no flooring at 0 (a household can
+genuinely owe more than it owns). financial-agent-v2's Stage 2 Step 3 needs
+net worth as assets-minus-debts, which the existing sum-only progress
+mechanism can't express — the app layer owns which curated fact keys count
+as assets/debts (its own approved classification table); this function is
+just the subtraction. Exported from `recap/__init__.py` alongside
+`calc_monthly_surplus`.
+
 ## Known issues (not being changed — reported, not fixed)
 
 - **Child Benefit charge is assessed on the partner's income only, not the

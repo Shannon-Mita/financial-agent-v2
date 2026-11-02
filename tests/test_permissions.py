@@ -6,6 +6,8 @@ import pytest
 
 from app.permissions import (
     CREATABLE_FACT_KEYS,
+    FACT_BACKED_TARGET_DATE_KEYS,
+    FACT_BACKED_TARGET_VALUE_KEYS,
     MEMBER_CREATABLE_FACT_KEYS,
     PROTECTED_KEY_PREFIXES,
     can_create_fact,
@@ -241,6 +243,36 @@ def test_creatable_fact_keys_is_exactly_the_approved_registry():
         "income.passive.rental",
         "income.passive.business",
         "income.passive.investments",
+        "goals.net_worth.target_date",
+        "goals.passive_income.target_amount",
+        "goals.passive_income.target_date",
+    })
+
+
+def test_new_apex_goal_date_keys_stay_owner_only_not_member_creatable():
+    """Unlike the passive income boxes, the two new goals' fact-backed
+    dates are regular `goals.*` keys — owner-only, same as every other
+    goal setting (Shannon, 2 Nov 2026: 'owner-only')."""
+    for key in ("goals.net_worth.target_date", "goals.passive_income.target_amount",
+                "goals.passive_income.target_date"):
+        assert key not in MEMBER_CREATABLE_FACT_KEYS
+        assert can_create_fact("owner", key)
+        assert not can_create_fact("member", key)
+
+
+def test_fact_backed_target_value_keys_includes_the_three_apex_targets():
+    assert FACT_BACKED_TARGET_VALUE_KEYS == frozenset({
+        "goals.fire.target_number",
+        "goals.net_worth.target_amount",
+        "goals.passive_income.target_amount",
+    })
+
+
+def test_fact_backed_target_date_keys_includes_the_three_apex_dates():
+    assert FACT_BACKED_TARGET_DATE_KEYS == frozenset({
+        "goals.fire.target_date",
+        "goals.net_worth.target_date",
+        "goals.passive_income.target_date",
     })
 
 

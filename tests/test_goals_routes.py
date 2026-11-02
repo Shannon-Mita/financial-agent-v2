@@ -559,7 +559,7 @@ def test_owner_sees_not_yet_set_section_with_correct_input_types(client, owner_u
     resp = client.get("/")
     body = resp.data.decode()
     assert "Not yet set" in body
-    assert 'action="/facts/goals.fire.target_date/update"' in body
+    assert 'action="/facts/goals.net_worth.target_date/update"' in body
     assert 'action="/facts/savings.house_deposit.balance/update"' in body
     # crude but sufficient: the date-typed input appears before the GBP one
     # closes, i.e. each form has its own correctly-typed input somewhere
@@ -595,17 +595,17 @@ def test_created_key_moves_from_not_yet_set_into_the_normal_list(client, owner_u
     # section the key is currently rendered in.
     login(client, owner_user_id)
     before = client.get("/").data.decode()
-    assert "Set goals.fire.target_date" in before
+    assert "Set goals.net_worth.target_date" in before
 
     page = client.get("/")
     client.post(
-        "/facts/goals.fire.target_date/update",
+        "/facts/goals.net_worth.target_date/update",
         data={"value": "2030-10-05", "csrf_token": token(page)},
     )
 
     after = client.get("/").data.decode()
-    assert "Set goals.fire.target_date" not in after  # no longer in "Not yet set"
-    assert "goals.fire.target_date" in after          # now in the normal list
+    assert "Set goals.net_worth.target_date" not in after  # no longer in "Not yet set"
+    assert "goals.net_worth.target_date" in after          # now in the normal list
     assert "2030-10-05" in after
 
 

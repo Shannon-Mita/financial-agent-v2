@@ -54,7 +54,12 @@
     {% if feasibility.refused %}
     <p class="caveat">Can't compute — missing: {{ feasibility.missing_keys | join(", ") }}</p>
     {% else %}
+    {% if feasibility.target_2030_money is not none %}
+    <div class="row"><span class="label">Target (2030 money)</span><span>£{{ "{:,.0f}".format(feasibility.target_2030_money) }}</span></div>
+    <div class="row"><span class="label">Target (today's money)</span><span>£{{ "{:,.0f}".format(feasibility.target) }}</span></div>
+    {% else %}
     <div class="row"><span class="label">Target</span><span>£{{ "{:,.0f}".format(feasibility.target) }}</span></div>
+    {% endif %}
     <div class="row"><span class="label">Current</span><span>£{{ "{:,.0f}".format(feasibility.current) }}</span></div>
     <div class="row"><span class="label">Shortfall</span><span>£{{ "{:,.0f}".format(feasibility.shortfall) }}</span></div>
     <div class="row"><span class="label">Months remaining</span><span>{{ feasibility.months_remaining }}</span></div>

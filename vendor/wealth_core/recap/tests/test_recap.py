@@ -7,7 +7,7 @@ from datetime import date, timedelta
 
 import pytest
 from facts_layer import FactStore, Fact, Unit, Source
-from recap import build_recap, calc_monthly_surplus
+from recap import build_recap, calc_monthly_surplus, calc_net_worth
 
 
 def seed(store, salary_partner=100000, as_of=None, extras=None,
@@ -384,6 +384,26 @@ def test_partner_pension_effect_on_income_tax_only():
     no_pension = calc_income_tax(70000, tax_year="2026/27")
     with_pension = calc_income_tax(70000, tax_year="2026/27", pension_contribution=6000)
     assert no_pension.income_tax - with_pension.income_tax == 2400
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# calc_net_worth() — Stage 2 Step 3 (financial-agent-v2): assets minus debts,
+# using whichever curated keys the caller classifies as each (the app layer
+# owns that classification, per its approved fact-key table; this function
+# just does the subtraction, pure and tested here).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_calc_net_worth_is_assets_minus_debts():
+    assert calc_net_worth(500000, 120000) == 380000
+
+
+def test_calc_net_worth_can_be_negative():
+    """A household can genuinely owe more than it owns — no flooring at 0."""
+    assert calc_net_worth(100000, 150000) == -50000
+
+
+def test_calc_net_worth_zero_debt():
+    assert calc_net_worth(250000, 0) == 250000
 
 
 def test_partner_pension_effect_on_child_benefit_charge_only():

@@ -18,8 +18,17 @@ from . import goals_store, vendor_path  # noqa: F401
 from facts_layer import Fact, Source, Unit, check_freshness
 
 from .db import get_conn
-from .fact_labels import GROUP_ORDER, group_for, label_for
-from .goal_progress import FIRE_TARGET_KEY, feasibility_for_goal, fire_accessible_breakdown
+from .fact_labels import GROUP_ORDER, HIDDEN_KEYS, group_for, label_for
+from .goal_progress import (
+    FIRE_TARGET_KEY,
+    NET_WORTH_TARGET_AMOUNT_KEY,
+    PASSIVE_INCOME_TARGET_AMOUNT_KEY,
+    feasibility_for_goal,
+    fire_accessible_breakdown,
+    household_surplus,
+    net_worth_feasibility,
+    passive_income_feasibility,
+)
 from .permissions import (
     CREATABLE_FACT_KEYS,
     FACT_BACKED_TARGET_DATE_KEYS,
@@ -49,6 +58,9 @@ CREATABLE_FACT_SPECS = {
     "income.passive.rental": (Unit.GBP_PER_MONTH, "passive_income", "joint"),
     "income.passive.business": (Unit.GBP_PER_MONTH, "passive_income", "joint"),
     "income.passive.investments": (Unit.GBP_PER_MONTH, "passive_income", "joint"),
+    "goals.net_worth.target_date": (Unit.DATE, "goal", "joint"),
+    "goals.passive_income.target_amount": (Unit.GBP_PER_MONTH, "goal", "joint"),
+    "goals.passive_income.target_date": (Unit.DATE, "goal", "joint"),
 }
 
 
@@ -173,6 +185,8 @@ def dashboard():
 
     rows = []
     for key in sorted(current.keys()):
+        if key in HIDDEN_KEYS:
+            continue
         fm = meta[key]
         rows.append({
             "key": key,
@@ -199,7 +213,7 @@ def dashboard():
     # on it.
     not_yet_set = []
     for key in sorted(CREATABLE_FACT_KEYS):
-        if key in current:
+        if key in current or key in HIDDEN_KEYS:
             continue
         if not can_create_fact(current_user.role, key):
             continue
@@ -459,6 +473,19 @@ def _parse_goal_form(form, known_fact_keys):
     return fields, assignee_user_ids
 
 
+def _feasibility_for(goal: dict, facts: dict):
+    """Net worth and passive income (Stage 2 Step 3) can't use the generic
+    sum-only feasibility_for_goal() — net worth needs assets-minus-debts,
+    passive income needs the stream-unit conversion — so they're dispatched
+    to their own calculations. Every other goal (milestones, old FIRE goal
+    if still present, anything else) keeps the generic one."""
+    if goal["source_fact_key"] == NET_WORTH_TARGET_AMOUNT_KEY:
+        return net_worth_feasibility(goal, facts)
+    if goal["source_fact_key"] == PASSIVE_INCOME_TARGET_AMOUNT_KEY:
+        return passive_income_feasibility(goal, facts)
+    return feasibility_for_goal(goal, facts)
+
+
 @bp.route("/goals")
 @login_required
 def goals_list():
@@ -469,25 +496,33 @@ def goals_list():
     for g in goals:
         by_parent[g["parent_id"]].append(g)
     for g in goals:
-        g["feasibility"] = feasibility_for_goal(g, facts)
+        g["feasibility"] = _feasibility_for(g, facts)
 
+    # The two apex goals (Stage 2 Step 3) — net worth and passive income
+    # replace FIRE as the apexes. If the old FIRE goal still exists
+    # (Shannon deletes it himself), it now renders as an ordinary
+    # top-level goal, not a third apex — the fire_breakdown card above is
+    # unaffected and still shows for it specifically, until it's gone.
     fire_goal = next((g for g in goals if g["source_fact_key"] == FIRE_TARGET_KEY), None)
     fire_breakdown = fire_accessible_breakdown(facts) if fire_goal else None
+    net_worth_goal = next((g for g in goals if g["source_fact_key"] == NET_WORTH_TARGET_AMOUNT_KEY), None)
+    passive_income_goal = next((g for g in goals if g["source_fact_key"] == PASSIVE_INCOME_TARGET_AMOUNT_KEY), None)
+    apex_goals = [g for g in (net_worth_goal, passive_income_goal) if g]
+    apex_ids = {g["id"] for g in apex_goals}
 
-    # FIRE is the one real apex goal — its own top-level peers (if any)
-    # render separately from it, so it doesn't look like just another card
-    # next to the milestones that actually belong underneath it.
     top_level_goals = by_parent[None]
-    other_top_level_goals = [g for g in top_level_goals if not fire_goal or g["id"] != fire_goal["id"]]
+    other_top_level_goals = [g for g in top_level_goals if g["id"] not in apex_ids]
+
+    surplus_display = household_surplus(facts)
 
     standalone_tasks = [t for t in goals_store.list_tasks(conn) if t["goal_id"] is None]
     users = {u["id"]: u for u in goals_store.list_users(conn)}
 
     return render_template(
         "goals_list.html", user=current_user,
-        fire_goal=fire_goal, other_top_level_goals=other_top_level_goals, by_parent=by_parent,
+        apex_goals=apex_goals, other_top_level_goals=other_top_level_goals, by_parent=by_parent,
         standalone_tasks=standalone_tasks, users=users,
-        fire_breakdown=fire_breakdown,
+        fire_breakdown=fire_breakdown, surplus_display=surplus_display,
     )
 
 
@@ -527,9 +562,9 @@ def goal_detail(goal_id):
 
     sub_goals = [g for g in goals_store.list_goals(conn) if g["parent_id"] == goal_id]
     for g in sub_goals:
-        g["feasibility"] = feasibility_for_goal(g, facts)
+        g["feasibility"] = _feasibility_for(g, facts)
 
-    feasibility = feasibility_for_goal(goal, facts)
+    feasibility = _feasibility_for(goal, facts)
     fire_breakdown = fire_accessible_breakdown(facts) if goal["source_fact_key"] == FIRE_TARGET_KEY else None
 
     tasks = goals_store.list_tasks(conn, goal_id=goal_id)

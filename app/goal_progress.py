@@ -20,8 +20,8 @@ from datetime import date
 
 from . import vendor_path  # noqa: F401  (adds vendor/wealth_core to sys.path)
 from facts_layer import check_freshness
-from recap import calc_monthly_surplus
-from tax_engine import DEFAULT_TAX_YEAR
+from recap import calc_monthly_surplus, calc_net_worth
+from tax_engine import DEFAULT_TAX_YEAR, deflate_to_today_money
 
 # ── FIRE accessible-assets breakdown ────────────────────────────────────
 #
@@ -45,6 +45,30 @@ HOUSE_DEPOSIT_KEY = "savings.house_deposit.balance"
 FIRE_TARGET_KEY = "goals.fire.target_number"
 
 
+# ── Net worth apex goal (Stage 2 Step 3) ────────────────────────────────
+#
+# The approved classification table (Shannon, 2 Nov 2026): 9 assets, 1
+# debt. Not the generic sum-only progress_fact_keys mechanism — net worth
+# needs subtraction, so it gets its own calculation (calc_net_worth, in
+# wealth-core) rather than feasibility_for_goal's single-basket sum.
+NET_WORTH_ASSET_KEYS = (
+    "cashflow.emergency_savings",
+    "isa.shannon.stocks_shares.value",
+    "isa.shannon.cash.value",
+    "isa.partner.stocks_shares.value",
+    "isa.partner.cash.value",
+    "investments.shannon.crypto_value",
+    "investments.partner.stocks_gia_value",
+    "savings.house_deposit.balance",
+    "property.main.value",
+)
+NET_WORTH_DEBT_KEYS = (
+    "property.main.mortgage_balance",
+)
+NET_WORTH_TARGET_AMOUNT_KEY = "goals.net_worth.target_amount"
+NET_WORTH_TARGET_DATE_KEY = "goals.net_worth.target_date"
+
+
 # ── Passive income total (Stage 2 Step 2) ───────────────────────────────
 #
 # Three new monthly boxes (Shannon, 2 Nov 2026) plus the existing
@@ -65,6 +89,8 @@ PASSIVE_INCOME_ANNUAL_KEYS = (
     "income.shannon.dividends",
     "income.partner.dividends",
 )
+PASSIVE_INCOME_TARGET_AMOUNT_KEY = "goals.passive_income.target_amount"
+PASSIVE_INCOME_TARGET_DATE_KEY = "goals.passive_income.target_date"
 
 
 def passive_income_total(facts: dict) -> float:
@@ -173,6 +199,7 @@ class Feasibility:
     missing_keys: tuple[str, ...] = field(default_factory=tuple)
     stale: tuple[tuple[str, int, int], ...] = field(default_factory=tuple)  # (key, age_days, max_age_days)
     target: float | None = None
+    target_2030_money: float | None = None  # only set for inflation-adjusted apex goals
     current: float | None = None
     shortfall: float | None = None
     months_remaining: int | None = None
@@ -180,6 +207,51 @@ class Feasibility:
     surplus: float | None = None
     verdict: str = ""              # "met" | "on_track" | "short" | "due_now"
     caveat: str = ""
+
+
+def _household_monthly_surplus(facts: dict, tax_year: str) -> float:
+    """Assumes SURPLUS_REQUIRED_KEYS are all present — callers check
+    freshness first. Shared by feasibility_for_goal, the two apex
+    feasibility functions below, and household_surplus (the Goals page's
+    standalone surplus display) — one implementation, not four."""
+    s_salary = _n(facts["income.shannon.paye_salary"].value)
+    p_salary = _n(facts["income.partner.paye_salary"].value)
+    s_pension = _optional_annual_pension(facts, "pensions.shannon.monthly_employee")
+    p_pension = _optional_annual_pension(facts, "pensions.partner.monthly_employee")
+    essentials = _n(facts["cashflow.monthly_essentials"].value)
+    lifestyle = _n(facts["cashflow.monthly_lifestyle"].value)
+    childcare = _n(facts["cashflow.monthly_childcare"].value)
+    other = _n(facts["cashflow.monthly_other"].value)
+    claiming_cb = bool(facts["children.0.child_benefit_claiming"].value)
+    return calc_monthly_surplus(
+        s_salary, p_salary, s_pension, p_pension,
+        essentials, lifestyle, childcare, other,
+        tax_year=tax_year, num_children=_num_children(facts), claiming=claiming_cb,
+    )
+
+
+def _shortfall_verdict(current: float, target: float, months_remaining: int, surplus: float):
+    """Shared by every target-type feasibility check: shortfall, required
+    monthly, and the met/due_now/on_track/short verdict. Returns
+    (shortfall, required_monthly, verdict)."""
+    shortfall = max(0.0, target - current)
+    if shortfall <= 0:
+        return shortfall, 0.0, "met"
+    if months_remaining <= 0:
+        return shortfall, shortfall, "due_now"
+    required_monthly = shortfall / months_remaining
+    verdict = "on_track" if surplus >= required_monthly else "short"
+    return shortfall, required_monthly, verdict
+
+
+def _stale_caveat(fresh, base_caveat: str) -> tuple[tuple, str]:
+    stale = tuple((s.key, s.age_days, s.max_age_days) for s in fresh.stale)
+    caveat = base_caveat
+    if stale:
+        parts = [f"{key} is {age}d old (max {limit}d)" for key, age, limit in
+                  sorted(stale, key=lambda s: -s[1])]
+        caveat += " Based on stale data: " + "; ".join(parts) + "."
+    return stale, caveat
 
 
 def feasibility_for_goal(goal: dict, facts: dict, *, on: date | None = None,
@@ -212,43 +284,116 @@ def feasibility_for_goal(goal: dict, facts: dict, *, on: date | None = None,
         return Feasibility(refused=True, missing_keys=("target_value_or_date",))
 
     current, _ = _sum_present(facts, progress_keys)
-
-    s_salary = _n(facts["income.shannon.paye_salary"].value)
-    p_salary = _n(facts["income.partner.paye_salary"].value)
-    s_pension = _optional_annual_pension(facts, "pensions.shannon.monthly_employee")
-    p_pension = _optional_annual_pension(facts, "pensions.partner.monthly_employee")
-    essentials = _n(facts["cashflow.monthly_essentials"].value)
-    lifestyle = _n(facts["cashflow.monthly_lifestyle"].value)
-    childcare = _n(facts["cashflow.monthly_childcare"].value)
-    other = _n(facts["cashflow.monthly_other"].value)
-
-    claiming_cb = bool(facts["children.0.child_benefit_claiming"].value)
-    surplus = calc_monthly_surplus(
-        s_salary, p_salary, s_pension, p_pension,
-        essentials, lifestyle, childcare, other,
-        tax_year=tax_year, num_children=_num_children(facts), claiming=claiming_cb,
-    )
-
-    stale = tuple((s.key, s.age_days, s.max_age_days) for s in fresh.stale)
-    caveat = PAYE_ONLY_CAVEAT + " " + STRAIGHT_LINE_CAVEAT
-    if stale:
-        parts = [f"{key} is {age}d old (max {limit}d)" for key, age, limit in
-                  sorted(stale, key=lambda s: -s[1])]
-        caveat += " Based on stale data: " + "; ".join(parts) + "."
-
-    shortfall = max(0.0, target_value - current)
+    surplus = _household_monthly_surplus(facts, tax_year)
+    stale, caveat = _stale_caveat(fresh, PAYE_ONLY_CAVEAT + " " + STRAIGHT_LINE_CAVEAT)
     months_remaining = _whole_months_between(ref, target_date)
-
-    if shortfall <= 0:
-        verdict, required_monthly = "met", 0.0
-    elif months_remaining <= 0:
-        verdict, required_monthly = "due_now", shortfall
-    else:
-        required_monthly = shortfall / months_remaining
-        verdict = "on_track" if surplus >= required_monthly else "short"
+    shortfall, required_monthly, verdict = _shortfall_verdict(current, target_value, months_remaining, surplus)
 
     return Feasibility(
         stale=stale, target=target_value, current=current, shortfall=shortfall,
         months_remaining=max(0, months_remaining), required_monthly=required_monthly,
         surplus=surplus, verdict=verdict, caveat=caveat,
     )
+
+
+# ── Net worth / passive income apex goals (Stage 2 Step 3) ──────────────
+#
+# Both goals' targets are in 2030 money (Shannon, 2 Nov 2026) — deflated to
+# today's money (via tax_engine.deflate_to_today_money, built in Step 1)
+# before comparing against today's-money current figures. Never the
+# reverse: projecting today's figures forward to 2030 would be a growth
+# projection, out of scope for this maths-only layer.
+#
+# Missing asset/debt or passive-income-stream facts do NOT refuse the
+# calculation — they're summed from whatever's present (same house style
+# as fire_accessible_breakdown: a missing asset isn't known to be zero, so
+# it's tracked as a caveat, not defaulted). Only the target amount/date and
+# the household surplus inputs are hard requirements — there's no sensible
+# number to show without those.
+
+INFLATION_CAVEAT = (
+    "Target is 2030 money, deflated to today's money using the OBR CPI "
+    "forecast before comparing — see the 2030-money figure for the "
+    "original target."
+)
+
+
+def net_worth_feasibility(goal: dict, facts: dict, *, on: date | None = None,
+                           tax_year: str = DEFAULT_TAX_YEAR) -> Feasibility:
+    ref = on or date.today()
+    required_keys = list(SURPLUS_REQUIRED_KEYS) + [NET_WORTH_TARGET_AMOUNT_KEY, NET_WORTH_TARGET_DATE_KEY]
+    fresh = check_freshness(facts, required_keys, on=ref)
+    if fresh.missing:
+        return Feasibility(refused=True, missing_keys=tuple(sorted(fresh.missing)))
+
+    target_2030 = _n(facts[NET_WORTH_TARGET_AMOUNT_KEY].value)
+    target_date = _as_date(facts[NET_WORTH_TARGET_DATE_KEY].value)
+    target_today_money = deflate_to_today_money(target_2030, nominal_year=target_date.year, today_year=ref.year)
+
+    assets, missing_assets = _sum_present(facts, NET_WORTH_ASSET_KEYS)
+    debts, missing_debts = _sum_present(facts, NET_WORTH_DEBT_KEYS)
+    current = calc_net_worth(assets, debts)
+
+    surplus = _household_monthly_surplus(facts, tax_year)
+    stale, caveat = _stale_caveat(fresh, STRAIGHT_LINE_CAVEAT + " " + INFLATION_CAVEAT)
+    months_remaining = _whole_months_between(ref, target_date)
+    shortfall, required_monthly, verdict = _shortfall_verdict(current, target_today_money, months_remaining, surplus)
+
+    return Feasibility(
+        missing_keys=tuple(missing_assets + missing_debts), stale=stale,
+        target=target_today_money, target_2030_money=target_2030, current=current,
+        shortfall=shortfall, months_remaining=max(0, months_remaining),
+        required_monthly=required_monthly, surplus=surplus, verdict=verdict, caveat=caveat,
+    )
+
+
+def passive_income_feasibility(goal: dict, facts: dict, *, on: date | None = None,
+                                tax_year: str = DEFAULT_TAX_YEAR) -> Feasibility:
+    ref = on or date.today()
+    required_keys = list(SURPLUS_REQUIRED_KEYS) + [PASSIVE_INCOME_TARGET_AMOUNT_KEY, PASSIVE_INCOME_TARGET_DATE_KEY]
+    fresh = check_freshness(facts, required_keys, on=ref)
+    if fresh.missing:
+        return Feasibility(refused=True, missing_keys=tuple(sorted(fresh.missing)))
+
+    target_2030 = _n(facts[PASSIVE_INCOME_TARGET_AMOUNT_KEY].value)
+    target_date = _as_date(facts[PASSIVE_INCOME_TARGET_DATE_KEY].value)
+    target_today_money = deflate_to_today_money(target_2030, nominal_year=target_date.year, today_year=ref.year)
+
+    current = passive_income_total(facts)
+    missing_streams = [k for k in PASSIVE_INCOME_MONTHLY_KEYS + PASSIVE_INCOME_ANNUAL_KEYS if k not in facts]
+
+    surplus = _household_monthly_surplus(facts, tax_year)
+    stale, caveat = _stale_caveat(fresh, STRAIGHT_LINE_CAVEAT + " " + INFLATION_CAVEAT)
+    months_remaining = _whole_months_between(ref, target_date)
+    shortfall, required_monthly, verdict = _shortfall_verdict(current, target_today_money, months_remaining, surplus)
+
+    return Feasibility(
+        missing_keys=tuple(missing_streams), stale=stale,
+        target=target_today_money, target_2030_money=target_2030, current=current,
+        shortfall=shortfall, months_remaining=max(0, months_remaining),
+        required_monthly=required_monthly, surplus=surplus, verdict=verdict, caveat=caveat,
+    )
+
+
+# ── Household surplus shown directly on the Goals page (Shannon, 2 Nov
+# 2026) — standalone, not only reachable by viewing a goal that happens to
+# surface it. ──────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class SurplusDisplay:
+    refused: bool = False
+    missing_keys: tuple[str, ...] = field(default_factory=tuple)
+    stale: tuple[tuple[str, int, int], ...] = field(default_factory=tuple)
+    value: float | None = None
+    caveat: str = ""
+
+
+def household_surplus(facts: dict, *, on: date | None = None,
+                       tax_year: str = DEFAULT_TAX_YEAR) -> SurplusDisplay:
+    ref = on or date.today()
+    fresh = check_freshness(facts, SURPLUS_REQUIRED_KEYS, on=ref)
+    if fresh.missing:
+        return SurplusDisplay(refused=True, missing_keys=tuple(sorted(fresh.missing)))
+    stale, caveat = _stale_caveat(fresh, PAYE_ONLY_CAVEAT)
+    value = _household_monthly_surplus(facts, tax_year)
+    return SurplusDisplay(stale=stale, value=value, caveat=caveat)

@@ -1,14 +1,17 @@
 """
-UI-only fix: the Goals page rendered every top-level goal as an equal peer
-in a grid, so FIRE (the one real apex goal, with milestones beneath it)
-read as just another card next to its own children. No data model change,
-no new fields — this only changes how goals_list.html lays out what
-routes.goals_list() already computes (it already identified `fire_goal`
-for the FIRE-breakdown card; it just never passed that identification
-through to the hierarchy rendering).
-"""
-import re
+UI-only fix (28 Oct 2026): the Goals page rendered every top-level goal as
+an equal peer in a grid, so a goal with milestones beneath it read as just
+another card next to its own children. No data model change, no new
+fields — nesting goal_card.html's children under their parent.
 
+UPDATED (Stage 2 Step 3, 2 Nov 2026): FIRE is retired as THE apex goal —
+net worth and passive income are the two apexes now (see
+tests/test_goals_apex_step3.py). If the old FIRE goal row still exists
+(Shannon deletes it himself), it renders as an ordinary top-level goal:
+its milestones still nest beneath it (same mechanism every top-level goal
+gets), just without the special "Milestones" heading/apex-grid treatment
+reserved for the two real apexes now.
+"""
 import app.goals_store as goals_store
 from app.store import PostgresFactStore
 from app.vendor_path import ensure_on_path
@@ -53,25 +56,25 @@ def _make_fire_with_milestones(pg_conn, owner_id, member_id):
     return fire_id, deposit_id, emergency_id
 
 
-def test_fire_renders_as_apex_with_milestones_heading(client, pg_conn, owner_user_id, member_user_id):
-    fire_id, deposit_id, emergency_id = _make_fire_with_milestones(pg_conn, owner_user_id, member_user_id)
+def test_fire_no_longer_gets_the_apex_milestones_heading(client, pg_conn, owner_user_id, member_user_id):
+    """FIRE is retired as an apex (Stage 2 Step 3) — its milestones still
+    nest beneath it, just without the "Milestones" heading reserved for
+    the two real apexes now."""
+    _make_fire_with_milestones(pg_conn, owner_user_id, member_user_id)
     login(client, owner_user_id)
     body = client.get("/goals").data.decode()
 
-    assert "Milestones" in body
-    # FIRE's own card appears before the Milestones heading...
+    assert "Milestones" not in body
+    assert ">FIRE<" in body
     fire_pos = body.find(">FIRE<")
-    milestones_pos = body.find("Milestones")
-    assert 0 <= fire_pos < milestones_pos
-    # ...and both milestones appear after it, nested.
     deposit_pos = body.find(">House deposit<")
     emergency_pos = body.find(">Emergency fund<")
-    assert milestones_pos < deposit_pos
-    assert milestones_pos < emergency_pos
+    assert fire_pos < deposit_pos
+    assert fire_pos < emergency_pos
 
 
 def test_milestones_are_visually_nested_not_flat_peers(client, pg_conn, owner_user_id, member_user_id):
-    fire_id, deposit_id, emergency_id = _make_fire_with_milestones(pg_conn, owner_user_id, member_user_id)
+    _make_fire_with_milestones(pg_conn, owner_user_id, member_user_id)
     login(client, owner_user_id)
     body = client.get("/goals").data.decode()
 
@@ -84,35 +87,33 @@ def test_milestones_are_visually_nested_not_flat_peers(client, pg_conn, owner_us
 
 
 def test_fire_is_not_duplicated_in_the_flat_grid(client, pg_conn, owner_user_id, member_user_id):
-    """FIRE must appear exactly once — as the apex — not also show up a
-    second time amongst any other top-level goals."""
+    """FIRE must appear exactly once, like any other top-level goal."""
     _make_fire_with_milestones(pg_conn, owner_user_id, member_user_id)
     login(client, owner_user_id)
     body = client.get("/goals").data.decode()
-    assert body.count(">FIRE</a>") == 1  # the goal card's own title link, not the apex <h2> heading
+    assert body.count(">FIRE</a>") == 1
 
 
-def test_other_top_level_goals_still_render_without_milestones_label(client, pg_conn, owner_user_id, member_user_id):
-    """A goal that isn't FIRE (no source_fact_key pointing at the FIRE
-    target) and has no parent is still a legitimate top-level goal — it
-    must still show up, just not mislabelled as FIRE's milestones."""
-    fire_id, _, _ = _make_fire_with_milestones(pg_conn, owner_user_id, member_user_id)
-    other_id = goals_store.create_goal(
+def test_other_top_level_goals_render_alongside_the_retired_fire_goal(client, pg_conn, owner_user_id, member_user_id):
+    """A goal that isn't FIRE and has no parent is still a legitimate
+    top-level goal — it shows up as its own card, same as FIRE now does."""
+    goals_store.create_goal(
         pg_conn, title="Learn Spanish", type="habit", target_value=None, target_date=None,
         source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
         cadence_period="weekly", cadence_amount=None, parent_id=None,
         assignee_user_ids=[owner_user_id], user_id=owner_user_id,
     )
+    _make_fire_with_milestones(pg_conn, owner_user_id, member_user_id)
     login(client, owner_user_id)
     body = client.get("/goals").data.decode()
     assert "Learn Spanish" in body
-    # It renders after the apex/milestones section, as its own top-level card.
-    assert body.find("Milestones") < body.find("Learn Spanish")
+    assert ">FIRE<" in body
 
 
 def test_no_fire_goal_falls_back_to_plain_flat_list(client, pg_conn, owner_user_id):
-    """No FIRE goal at all (e.g. a fresh household) — no apex section, no
-    "Milestones" heading, just the existing flat rendering. Must not error."""
+    """No FIRE goal at all (e.g. a fresh household, or after Shannon
+    deletes it) — no "Milestones" heading, just the existing flat
+    rendering. Must not error."""
     goals_store.create_goal(
         pg_conn, title="Learn Spanish", type="habit", target_value=None, target_date=None,
         source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
@@ -127,9 +128,9 @@ def test_no_fire_goal_falls_back_to_plain_flat_list(client, pg_conn, owner_user_
     assert "Learn Spanish" in body
 
 
-def test_member_also_sees_fire_as_apex(client, pg_conn, owner_user_id, member_user_id):
+def test_member_also_sees_the_retired_fire_goal_and_its_nested_milestones(client, pg_conn, owner_user_id, member_user_id):
     _make_fire_with_milestones(pg_conn, owner_user_id, member_user_id)
     login(client, member_user_id)
     body = client.get("/goals").data.decode()
-    assert "Milestones" in body
-    assert body.find(">FIRE<") < body.find("Milestones") < body.find(">House deposit<")
+    assert ">FIRE<" in body
+    assert body.find(">FIRE<") < body.find(">House deposit<")

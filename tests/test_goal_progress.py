@@ -9,16 +9,22 @@ import pytest
 
 from app.goal_progress import (
     FIRE_ACCESSIBLE_KEYS,
+    NET_WORTH_ASSET_KEYS,
+    NET_WORTH_DEBT_KEYS,
     PASSIVE_INCOME_ANNUAL_KEYS,
     PASSIVE_INCOME_MONTHLY_KEYS,
     feasibility_for_goal,
     fire_accessible_breakdown,
+    household_surplus,
+    net_worth_feasibility,
+    passive_income_feasibility,
     passive_income_total,
 )
 from app.vendor_path import ensure_on_path
 
 ensure_on_path()
 from facts_layer import Fact, Source, Unit  # noqa: E402
+from tax_engine import deflate_to_today_money  # noqa: E402
 
 TODAY = date(2026, 10, 29)
 
@@ -338,3 +344,187 @@ def test_passive_income_boxes_and_interest_dividends_keys_never_feed_fire_access
     this app today."""
     for key in PASSIVE_INCOME_MONTHLY_KEYS + PASSIVE_INCOME_ANNUAL_KEYS:
         assert key not in FIRE_ACCESSIBLE_KEYS
+
+
+# ── Net worth / passive income apex goals (Stage 2 Step 3, 2 Nov 2026) ────
+# Both targets are in 2030 money; deflated to today's money before being
+# compared against today's-money current figures (never the reverse).
+
+NET_WORTH_GOAL = {
+    "type": "target", "target_value": None, "target_date": None,
+    "source_fact_key": "goals.net_worth.target_amount",
+    "target_date_fact_key": "goals.net_worth.target_date",
+    "progress_fact_keys": [],
+}
+
+PASSIVE_INCOME_GOAL = {
+    "type": "target", "target_value": None, "target_date": None,
+    "source_fact_key": "goals.passive_income.target_amount",
+    "target_date_fact_key": "goals.passive_income.target_date",
+    "progress_fact_keys": [],
+}
+
+
+def net_worth_facts(**overrides):
+    facts = base_facts()
+    facts.update({
+        "cashflow.emergency_savings": fact("cashflow.emergency_savings", 13000, Unit.GBP, "balance"),
+        "isa.shannon.stocks_shares.value": fact("isa.shannon.stocks_shares.value", 40000, Unit.GBP, "balance"),
+        "isa.shannon.cash.value": fact("isa.shannon.cash.value", 5000, Unit.GBP, "balance"),
+        "isa.partner.stocks_shares.value": fact("isa.partner.stocks_shares.value", 20000, Unit.GBP, "balance"),
+        "isa.partner.cash.value": fact("isa.partner.cash.value", 3000, Unit.GBP, "balance"),
+        "investments.shannon.crypto_value": fact("investments.shannon.crypto_value", 2000, Unit.GBP, "balance"),
+        "investments.partner.stocks_gia_value": fact("investments.partner.stocks_gia_value", 10000, Unit.GBP, "balance"),
+        "property.main.value": fact("property.main.value", 495000, Unit.GBP, "valuation"),
+        "property.main.mortgage_balance": fact("property.main.mortgage_balance", 375000, Unit.GBP, "mortgage"),
+        "goals.net_worth.target_amount": fact("goals.net_worth.target_amount", 1_000_000, Unit.GBP, "goal"),
+        "goals.net_worth.target_date": fact("goals.net_worth.target_date", "2030-10-05", Unit.DATE, "goal"),
+    })
+    # savings.house_deposit.balance is already in base_facts() (22000) —
+    # it's a net worth asset too, not entered twice.
+    facts.update(overrides)
+    return facts
+
+
+# Hand-summed assets: 13000 (emergency) + 40000 + 5000 + 20000 + 3000 + 2000
+# + 10000 + 22000 (house deposit) + 495000 (property) = 610000.
+# Debt: 375000. Net worth = 235000.
+NET_WORTH_CURRENT = 235000
+
+
+def test_net_worth_current_is_assets_minus_debts():
+    f = net_worth_feasibility(NET_WORTH_GOAL, net_worth_facts(), on=TODAY, tax_year="2026/27")
+    assert f.refused is False
+    assert f.current == NET_WORTH_CURRENT
+
+
+def test_net_worth_shows_both_2030_and_todays_money_targets():
+    f = net_worth_feasibility(NET_WORTH_GOAL, net_worth_facts(), on=TODAY, tax_year="2026/27")
+    assert f.target_2030_money == 1_000_000
+    expected_today_money = deflate_to_today_money(1_000_000, nominal_year=2030, today_year=TODAY.year)
+    assert f.target == pytest.approx(expected_today_money)
+    assert f.target < f.target_2030_money  # deflating a future figure reduces it
+
+
+def test_net_worth_shortfall_is_deflated_target_minus_current():
+    f = net_worth_feasibility(NET_WORTH_GOAL, net_worth_facts(), on=TODAY, tax_year="2026/27")
+    assert f.shortfall == pytest.approx(f.target - f.current)
+
+
+def test_net_worth_required_monthly_uses_household_surplus_for_verdict():
+    f = net_worth_feasibility(NET_WORTH_GOAL, net_worth_facts(), on=TODAY, tax_year="2026/27")
+    assert f.verdict in ("on_track", "short", "met", "due_now")
+    if f.verdict in ("on_track", "short"):
+        assert f.required_monthly == pytest.approx(f.shortfall / f.months_remaining)
+
+
+def test_net_worth_refuses_when_target_amount_missing():
+    facts = net_worth_facts()
+    del facts["goals.net_worth.target_amount"]
+    f = net_worth_feasibility(NET_WORTH_GOAL, facts, on=TODAY, tax_year="2026/27")
+    assert f.refused is True
+    assert "goals.net_worth.target_amount" in f.missing_keys
+
+
+def test_net_worth_refuses_when_target_date_missing():
+    facts = net_worth_facts()
+    del facts["goals.net_worth.target_date"]
+    f = net_worth_feasibility(NET_WORTH_GOAL, facts, on=TODAY, tax_year="2026/27")
+    assert f.refused is True
+    assert "goals.net_worth.target_date" in f.missing_keys
+
+
+def test_net_worth_refuses_when_surplus_fact_missing():
+    facts = net_worth_facts()
+    del facts["income.partner.paye_salary"]
+    f = net_worth_feasibility(NET_WORTH_GOAL, facts, on=TODAY, tax_year="2026/27")
+    assert f.refused is True
+
+
+def test_net_worth_computed_from_present_assets_when_one_is_missing_not_refused():
+    """Missing asset key -> still computed from what's present (same house
+    style as fire_accessible_breakdown), not a hard refusal — a missing
+    asset isn't known to be zero, so the caveat says so, but a number
+    still shows."""
+    facts = net_worth_facts()
+    del facts["investments.shannon.crypto_value"]
+    f = net_worth_feasibility(NET_WORTH_GOAL, facts, on=TODAY, tax_year="2026/27")
+    assert f.refused is False
+    assert f.current == NET_WORTH_CURRENT - 2000
+    assert "investments.shannon.crypto_value" in f.missing_keys
+
+
+def test_net_worth_never_uses_the_generic_sum_mechanism():
+    """Regression guard: NET_WORTH_ASSET_KEYS/NET_WORTH_DEBT_KEYS must match
+    the approved classification table exactly (9 assets, 1 debt)."""
+    assert len(NET_WORTH_ASSET_KEYS) == 9
+    assert len(NET_WORTH_DEBT_KEYS) == 1
+    assert "property.main.mortgage_balance" in NET_WORTH_DEBT_KEYS
+    assert "property.main.mortgage_balance" not in NET_WORTH_ASSET_KEYS
+
+
+def passive_income_goal_facts(**overrides):
+    facts = base_facts()
+    facts.update(dict(PASSIVE_INCOME_FACTS))
+    facts.update({
+        "goals.passive_income.target_amount": fact(
+            "goals.passive_income.target_amount", 12000, Unit.GBP_PER_MONTH, "goal"
+        ),
+        "goals.passive_income.target_date": fact(
+            "goals.passive_income.target_date", "2030-10-05", Unit.DATE, "goal"
+        ),
+    })
+    facts.update(overrides)
+    return facts
+
+
+# PASSIVE_INCOME_FACTS (defined above): 500+300+200 boxes + (60+72+120+240)/12
+PASSIVE_INCOME_CURRENT = 500 + 300 + 200 + (60 + 72 + 120 + 240) / 12
+
+
+def test_passive_income_current_matches_passive_income_total():
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, passive_income_goal_facts(), on=TODAY, tax_year="2026/27")
+    assert f.refused is False
+    assert f.current == pytest.approx(PASSIVE_INCOME_CURRENT)
+
+
+def test_passive_income_shows_both_2030_and_todays_money_targets():
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, passive_income_goal_facts(), on=TODAY, tax_year="2026/27")
+    assert f.target_2030_money == 12000
+    expected_today_money = deflate_to_today_money(12000, nominal_year=2030, today_year=TODAY.year)
+    assert f.target == pytest.approx(expected_today_money)
+
+
+def test_passive_income_refuses_when_target_amount_missing():
+    facts = passive_income_goal_facts()
+    del facts["goals.passive_income.target_amount"]
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, facts, on=TODAY, tax_year="2026/27")
+    assert f.refused is True
+    assert "goals.passive_income.target_amount" in f.missing_keys
+
+
+def test_passive_income_not_refused_when_one_stream_missing():
+    """Consistent with Step 2's passive_income_total(): a stream not yet
+    set up means zero income from it, not a refusal."""
+    facts = passive_income_goal_facts()
+    del facts["income.passive.rental"]
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, facts, on=TODAY, tax_year="2026/27")
+    assert f.refused is False
+    assert f.current == pytest.approx(PASSIVE_INCOME_CURRENT - 500)
+
+
+# ── Household surplus shown directly on the Goals page ──────────────────
+
+def test_household_surplus_matches_feasibility_for_goal_surplus():
+    f_goal = feasibility_for_goal(DEPOSIT_GOAL, base_facts(), on=TODAY, tax_year="2026/27")
+    s = household_surplus(base_facts(), on=TODAY, tax_year="2026/27")
+    assert s.refused is False
+    assert s.value == pytest.approx(f_goal.surplus)
+
+
+def test_household_surplus_refuses_when_a_required_fact_is_missing():
+    facts = base_facts()
+    del facts["cashflow.monthly_essentials"]
+    s = household_surplus(facts, on=TODAY, tax_year="2026/27")
+    assert s.refused is True
+    assert "cashflow.monthly_essentials" in s.missing_keys

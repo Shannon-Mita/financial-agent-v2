@@ -60,6 +60,9 @@ CREATABLE_FACT_KEYS = frozenset({
     "income.passive.rental",
     "income.passive.business",
     "income.passive.investments",
+    "goals.net_worth.target_date",
+    "goals.passive_income.target_amount",
+    "goals.passive_income.target_date",
 })
 
 # A narrower exception to the owner-only creation rule above: the three
@@ -78,8 +81,16 @@ MEMBER_CREATABLE_FACT_KEYS = frozenset({
 # fact-backing a goal's target is to point at a SPECIFIC known number
 # (the FIRE target), not let the owner wire up any arbitrary fact. Extend
 # this set, don't bypass it, if another fact-backed goal is approved.
-FACT_BACKED_TARGET_VALUE_KEYS = frozenset({"goals.fire.target_number"})
-FACT_BACKED_TARGET_DATE_KEYS = frozenset({"goals.fire.target_date"})
+FACT_BACKED_TARGET_VALUE_KEYS = frozenset({
+    "goals.fire.target_number",
+    "goals.net_worth.target_amount",
+    "goals.passive_income.target_amount",
+})
+FACT_BACKED_TARGET_DATE_KEYS = frozenset({
+    "goals.fire.target_date",
+    "goals.net_worth.target_date",
+    "goals.passive_income.target_date",
+})
 
 
 def can_create_fact(role: str, key: str) -> bool:

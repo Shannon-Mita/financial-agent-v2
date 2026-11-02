@@ -98,6 +98,17 @@ def _n(v) -> float:
         return 0.0
 
 
+def calc_net_worth(assets_total: float, debts_total: float) -> float:
+    """Net worth: all assets minus all debts. No flooring at 0 — a
+    household can genuinely owe more than it owns.
+
+    Which curated fact keys count as assets/debts is the app layer's own
+    classification (financial-agent-v2's approved fact-key table), not a
+    wealth-core concern — this function is pure arithmetic over whatever
+    totals the caller has already summed."""
+    return assets_total - debts_total
+
+
 def calc_monthly_surplus(
     s_salary: float,
     p_salary: float,

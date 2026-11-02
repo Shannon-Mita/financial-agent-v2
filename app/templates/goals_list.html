@@ -7,6 +7,19 @@
   <a href="{{ url_for('routes.new_goal') }}"><button type="button">+ New goal</button></a>
   {% endif %}
 
+  {% if surplus_display.refused %}
+  <div class="card">
+    <div class="card-title">Current monthly surplus</div>
+    <p class="caveat">Can't compute — missing: {{ surplus_display.missing_keys | join(", ") }}</p>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="card-title">Current monthly surplus</div>
+    <div class="row"><span class="label">Surplus</span><span>£{{ "{:,.0f}".format(surplus_display.value) }}/month</span></div>
+    {% if surplus_display.caveat %}<p class="caveat">{{ surplus_display.caveat }}</p>{% endif %}
+  </div>
+  {% endif %}
+
   {% if fire_breakdown %}
   <div class="card">
     <div class="card-title">FIRE — accessible assets</div>
@@ -50,33 +63,80 @@
     <p class="caveat">Can't compute — missing: {{ g.feasibility.missing_keys | join(", ") }}</p>
     {% endif %}
   </div>
+  {% endmacro %}
+
+  {% macro milestones_for(g) %}
   {% set children = by_parent.get(g.id, []) %}
-  {% if children and sub is false and g.id == (fire_goal.id if fire_goal else -1) %}
+  {% if children %}
   <h2 class="milestones-label">Milestones</h2>
-  {% endif %}
   {% for child in children %}
+    {{ goal_card(child, sub=True) }}
+  {% endfor %}
+  {% endif %}
+  {% endmacro %}
+
+  {% macro plain_children_for(g) %}
+  {% for child in by_parent.get(g.id, []) %}
     {{ goal_card(child, sub=True) }}
   {% endfor %}
   {% endmacro %}
 
-  {% if fire_goal %}
-  <h2>FIRE</h2>
+  {% macro apex_card(g) %}
+  <div class="card apex-card">
+    <div class="card-title"><a href="{{ url_for('routes.goal_detail', goal_id=g.id) }}">{{ g.title }}</a></div>
+    {% if g.feasibility.refused %}
+    <p class="caveat">Can't compute — missing: {{ g.feasibility.missing_keys | join(", ") }}</p>
+    {% else %}
+    <div class="row"><span class="label">Current</span><span>£{{ "{:,.0f}".format(g.feasibility.current) }}</span></div>
+    {% if g.feasibility.target_2030_money is not none %}
+    <div class="row"><span class="label">Target (2030 money)</span><span>£{{ "{:,.0f}".format(g.feasibility.target_2030_money) }}</span></div>
+    <div class="row"><span class="label">Target (today's money)</span><span>£{{ "{:,.0f}".format(g.feasibility.target) }}</span></div>
+    {% else %}
+    <div class="row"><span class="label">Target</span><span>£{{ "{:,.0f}".format(g.feasibility.target) }}</span></div>
+    {% endif %}
+    <div class="row"><span class="label">Gap</span><span>£{{ "{:,.0f}".format(g.feasibility.shortfall) }}</span></div>
+    <div class="row">
+      <span class="label">£/month needed by 5 Oct 2030</span>
+      <span>£{{ "{:,.0f}".format(g.feasibility.required_monthly) }}</span>
+    </div>
+    <div class="row">
+      <span class="label">Status</span>
+      <span>
+        {% if g.feasibility.verdict == "on_track" %}<span class="badge on-track">on track</span>
+        {% elif g.feasibility.verdict == "short" %}<span class="badge short">short</span>
+        {% elif g.feasibility.verdict == "met" %}<span class="badge on-track">target met</span>
+        {% elif g.feasibility.verdict == "due_now" %}<span class="badge short">due now</span>
+        {% endif %}
+      </span>
+    </div>
+    {% if g.feasibility.missing_keys %}
+    <p class="caveat">Missing (treated as zero): {{ g.feasibility.missing_keys | join(", ") }}</p>
+    {% endif %}
+    <p class="caveat">{{ g.feasibility.caveat }}</p>
+    {% endif %}
+  </div>
+  {{ milestones_for(g) }}
+  {% endmacro %}
+
+  {% for apex in apex_goals %}
+  <h2>{{ apex.title }}</h2>
   <div class="card-grid apex">
     <div class="grid-cell">
-      {{ goal_card(fire_goal) }}
+      {{ apex_card(apex) }}
     </div>
   </div>
-  {% endif %}
+  {% endfor %}
 
   <div class="card-grid">
     {% for g in other_top_level_goals %}
     <div class="grid-cell">
       {{ goal_card(g) }}
+      {{ plain_children_for(g) }}
     </div>
     {% endfor %}
   </div>
 
-  {% if not fire_goal and not other_top_level_goals %}
+  {% if not apex_goals and not other_top_level_goals %}
   <p class="readonly-note">No goals yet.</p>
   {% endif %}
 

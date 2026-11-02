@@ -49,13 +49,13 @@ def test_facts_grouped_under_the_right_headings(client, pg_conn, owner_user_id):
 def test_friendly_label_shown_with_raw_key_visible_in_small_text(client, pg_conn, owner_user_id):
     store = PostgresFactStore(pg_conn)
     store.set(
-        Fact.create("goals.fire.target_date", "2030-10-05", Unit.DATE, Source.USER_STATED, "goal"),
+        Fact.create("goals.net_worth.target_date", "2030-10-05", Unit.DATE, Source.USER_STATED, "goal"),
         owner="joint", entered_by_user_id=owner_user_id,
     )
     login(client, owner_user_id)
     body = client.get("/").data.decode()
-    assert "FIRE target date" in body
-    assert 'class="raw-key">goals.fire.target_date<' in body
+    assert "Net worth target date" in body
+    assert 'class="raw-key">goals.net_worth.target_date<' in body
 
 
 def test_unknown_key_falls_back_to_raw_key_as_its_own_label(client, pg_conn, owner_user_id):
@@ -156,3 +156,64 @@ def test_member_still_does_not_see_owner_only_not_yet_set_cards(client, pg_conn,
     login(client, member_user_id)
     body = client.get("/").data.decode()
     assert "savings.house_deposit.balance" not in body
+
+
+# ── Stage 2 Step 3 (last): hide all six goals.fire.* boxes — FIRE is
+# retired as the apex (net worth + passive income replace it), but the
+# facts themselves are never deleted (append-only). ─────────────────────
+
+FIRE_HIDDEN_KEYS = (
+    "goals.fire.target_number",
+    "goals.fire.swr",
+    "goals.fire.target_age",
+    "goals.fire.target_years",
+    "goals.fire.target_monthly_income",
+    "goals.fire.target_date",
+)
+
+
+def test_all_six_fire_boxes_hidden_from_numbers_page_when_set(client, pg_conn, owner_user_id):
+    store = PostgresFactStore(pg_conn)
+    seed = [
+        ("goals.fire.target_number", 2_400_000, Unit.GBP),
+        ("goals.fire.swr", 4.0, Unit.PERCENT),
+        ("goals.fire.target_age", 55, Unit.COUNT),
+        ("goals.fire.target_years", 9, Unit.COUNT),
+        ("goals.fire.target_monthly_income", 10000, Unit.GBP),
+        ("goals.fire.target_date", "2030-10-05", Unit.DATE),
+    ]
+    for key, val, unit in seed:
+        store.set(Fact.create(key, val, unit, Source.USER_STATED, "goal"), owner="joint", entered_by_user_id=owner_user_id)
+
+    login(client, owner_user_id)
+    body = client.get("/").data.decode()
+    for key in FIRE_HIDDEN_KEYS:
+        assert key not in body, f"{key} should be hidden from the Numbers page"
+
+
+def test_fire_boxes_not_offered_as_not_yet_set_either(client, pg_conn, owner_user_id):
+    """goals.fire.target_date is the one FIRE key that's ever been
+    creatable — it must not be prompted for any more either, now FIRE is
+    retired."""
+    login(client, owner_user_id)
+    body = client.get("/").data.decode()
+    assert "goals.fire.target_date" not in body
+
+
+def test_fact_still_exists_in_the_store_even_though_hidden(client, pg_conn, owner_user_id):
+    """Hidden means not shown/used — never deleted (facts are append-only)."""
+    store = PostgresFactStore(pg_conn)
+    store.set(Fact.create("goals.fire.target_number", 2_400_000, Unit.GBP, Source.USER_STATED, "goal"),
+               owner="joint", entered_by_user_id=owner_user_id)
+    login(client, owner_user_id)
+    client.get("/")  # hidden from this page's rendering...
+    assert store.get("goals.fire.target_number").value == 2_400_000  # ...but never deleted
+
+
+def test_non_fire_goal_facts_still_render_normally(client, pg_conn, owner_user_id):
+    store = PostgresFactStore(pg_conn)
+    store.set(Fact.create("goals.net_worth.target_amount", 1_000_000, Unit.GBP, Source.USER_STATED, "goal"),
+               owner="joint", entered_by_user_id=owner_user_id)
+    login(client, owner_user_id)
+    body = client.get("/").data.decode()
+    assert "goals.net_worth.target_amount" in body
