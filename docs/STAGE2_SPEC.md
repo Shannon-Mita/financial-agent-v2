@@ -213,15 +213,22 @@ Every figure is adjusted to the year it applies to.
 ## 5. Strategies
 
 ### Data model
-- **`strategies`**: id, title, detail, status (idea / in progress / active /
-  parked / archived), "work lives in" (project or repo, or "here"), effect on
-  net worth (£ by 5 Oct 2030, numeric), effect on passive income (£/month
-  after tax by 5 Oct 2030, numeric), risks childcare eligibility (yes / no /
-  unknown — see §3), archived reason, archived date, last reviewed date,
-  source (shannon / asha), created/updated/by whom.
+- **`strategies`**: id, title, detail, **area** (added 3 Nov 2026 — this
+  section's own grouping-by-area requirement below has no column to
+  render from without it; the worksheet's six section headings, stored
+  verbatim), status (idea / in progress / active / parked / archived),
+  "work lives in" (project or repo, or "here"), effect on net worth (£ by
+  5 Oct 2030, numeric), effect on passive income (£/month after tax by 5
+  Oct 2030, numeric), risks childcare eligibility (yes / no / unknown —
+  see §3), archived reason, archived date, last reviewed date, source
+  (shannon / asha), created/updated/by whom.
   - Dropped from the original draft: "the number" (redundant with the two
     numeric effect fields, Shannon 1 Nov 2026) and "confidence" (dropped
     entirely, Shannon 1 Nov 2026).
+  - `detail` and `status` are also nullable, same NULL="?" rule as the two
+    numeric effect fields (added 3 Nov 2026) — the worksheet has "Status: ?"
+    (2 entries) and "Detail: ?" (5 entries); forcing either into a
+    fabricated default would misrepresent a genuine unknown as a decision.
   - Numeric fields are stored as numbers or `NULL`. `NULL` displays as `?` and
     is never defaulted to zero. A genuine, known zero effect (e.g. strategy 8,
     "not operating to produce profit") is stored as the number `0`, not `?`

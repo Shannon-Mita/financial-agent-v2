@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Delete strategy?{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}">&larr; Cancel</a></p>
+  <h1>Delete "{{ strategy.title }}"?</h1>
+
+  <div class="card">
+    {% if steps %}
+    <p>Deleting this strategy will also delete {{ steps | length }} step{{ "s" if steps | length != 1 else "" }}:</p>
+    <ul>
+      {% for s in steps %}<li>{{ s.title }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <p>This strategy has no steps — nothing else will be deleted with it.</p>
+    {% endif %}
+    <p>This cannot be undone. Delete is for mistakes — if this strategy is simply no longer relevant, archive it instead.</p>
+    <form method="post" action="{{ url_for('routes.delete_strategy', strategy_id=strategy.id) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="danger">Delete permanently</button>
+    </form>
+    <a href="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}"><button type="button" class="secondary">Cancel</button></a>
+  </div>
+{% endblock %}

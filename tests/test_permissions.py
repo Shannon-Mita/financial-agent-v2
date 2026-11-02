@@ -10,10 +10,14 @@ from app.permissions import (
     FACT_BACKED_TARGET_VALUE_KEYS,
     MEMBER_CREATABLE_FACT_KEYS,
     PROTECTED_KEY_PREFIXES,
+    can_archive_or_delete_strategy,
     can_create_fact,
     can_create_task,
     can_edit_or_delete_task,
+    can_edit_strategy,
+    can_set_strategy_status,
     can_toggle_goal_status,
+    can_toggle_strategy_step,
     can_toggle_task,
     can_write_fact,
     is_protected,
@@ -477,3 +481,58 @@ def test_owner_required_redirects_unauthenticated(app, pg_conn):
     client = app.test_client()
     resp = client.get("/_test/owner-only-3")
     assert resp.status_code in (302, 401)
+
+
+# ── Strategies (Stage 2 Step 4) ──────────────────────────────────────────
+
+def test_owner_can_edit_any_strategy():
+    assert can_edit_strategy("owner")
+
+
+def test_member_can_edit_any_strategy_too():
+    """The first object in this app where edit rights are not owner-only
+    or creator/assignee-gated (Shannon, 1 Nov 2026)."""
+    assert can_edit_strategy("member")
+
+
+def test_unknown_role_cannot_edit_strategy():
+    assert not can_edit_strategy("guest")
+
+
+def test_only_owner_can_archive_or_delete():
+    assert can_archive_or_delete_strategy("owner")
+    assert not can_archive_or_delete_strategy("member")
+
+
+@pytest.mark.parametrize("status", ["idea", "in progress", "active", "parked"])
+def test_member_can_set_any_non_archived_status(status):
+    assert can_set_strategy_status("member", status)
+
+
+def test_member_cannot_set_status_to_archived_even_via_plain_edit():
+    """Archiving goes through its own owner-only route (with a required
+    reason/date) — a member's edit payload setting status=archived
+    directly must be blocked here too, not just omitted from her form's
+    dropdown (never trust a hidden control)."""
+    assert not can_set_strategy_status("member", "archived")
+
+
+def test_owner_can_set_status_to_archived_via_plain_edit_too():
+    assert can_set_strategy_status("owner", "archived")
+
+
+def test_either_person_can_add_or_edit_a_strategy_step():
+    # Steps reuse can_edit_strategy's unconditional rule — no separate
+    # creator/assignee gating, unlike tasks.
+    assert can_edit_strategy("owner")
+    assert can_edit_strategy("member")
+
+
+def test_owner_can_toggle_any_strategy_step():
+    assert can_toggle_strategy_step("owner", 1, 2)
+
+
+def test_member_can_only_toggle_her_own_assigned_strategy_step():
+    assert can_toggle_strategy_step("member", 2, 2)
+    assert not can_toggle_strategy_step("member", 2, 1)
+    assert not can_toggle_strategy_step("member", 2, None)

@@ -20,7 +20,8 @@ from facts_layer import Fact, Source, Unit  # noqa: E402
 def wipe(conn):
     with conn.cursor() as cur:
         cur.execute(
-            "TRUNCATE facts, users, goals, goal_assignees, tasks, audit_log "
+            "TRUNCATE facts, users, goals, goal_assignees, tasks, audit_log, "
+            "strategies, strategy_goal_links, strategy_levers, strategy_steps "
             "RESTART IDENTITY CASCADE"
         )
     conn.commit()

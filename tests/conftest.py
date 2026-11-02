@@ -55,7 +55,8 @@ def pg_conn():
         # a DELETE statement) — safe for test isolation without weakening the
         # append-only guarantee application code relies on.
         cur.execute(
-            "TRUNCATE facts, users, goals, goal_assignees, tasks, audit_log "
+            "TRUNCATE facts, users, goals, goal_assignees, tasks, audit_log, "
+            "strategies, strategy_goal_links, strategy_levers, strategy_steps "
             "RESTART IDENTITY CASCADE"
         )
     conn.commit()

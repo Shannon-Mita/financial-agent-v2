@@ -14,11 +14,11 @@ from flask_login import current_user, login_required
 from werkzeug.exceptions import MethodNotAllowed, NotFound
 from werkzeug.routing import RequestRedirect
 
-from . import goals_store, vendor_path  # noqa: F401
+from . import goals_store, strategies_store, vendor_path  # noqa: F401
 from facts_layer import Fact, Source, Unit, check_freshness
 
 from .db import get_conn
-from .fact_labels import GROUP_ORDER, HIDDEN_KEYS, group_for, label_for
+from .fact_labels import FACT_LABELS, GROUP_ORDER, HIDDEN_KEYS, group_for, label_for
 from .goal_progress import (
     FIRE_TARGET_KEY,
     NET_WORTH_TARGET_AMOUNT_KEY,
@@ -33,16 +33,23 @@ from .permissions import (
     CREATABLE_FACT_KEYS,
     FACT_BACKED_TARGET_DATE_KEYS,
     FACT_BACKED_TARGET_VALUE_KEYS,
+    can_archive_or_delete_strategy,
     can_create_fact,
     can_create_task,
     can_edit_or_delete_task,
+    can_edit_strategy,
+    can_set_strategy_status,
     can_toggle_goal_status,
+    can_toggle_strategy_step,
     can_toggle_task,
     can_write_fact,
     is_protected,
     owner_required,
 )
 from .store import PostgresFactStore
+from .strategy_review import is_strategy_stale
+
+STRATEGY_AREAS = ("Work and income", "Relocation", "Business", "Investing", "Property", "Spending")
 
 bp = Blueprint("routes", __name__)
 
@@ -518,11 +525,21 @@ def goals_list():
     standalone_tasks = [t for t in goals_store.list_tasks(conn) if t["goal_id"] is None]
     users = {u["id"]: u for u in goals_store.list_users(conn)}
 
+    # Strategies grouped by area (§7) — archived strategies drop off this
+    # active list and stay in history, reachable only by id.
+    active_strategies = [s for s in strategies_store.list_strategies(conn) if s["status"] != "archived"]
+    for s in active_strategies:
+        s["stale"] = is_strategy_stale(s["last_reviewed_date"])
+    strategies_by_area = defaultdict(list)
+    for s in active_strategies:
+        strategies_by_area[s["area"]].append(s)
+
     return render_template(
         "goals_list.html", user=current_user,
         apex_goals=apex_goals, other_top_level_goals=other_top_level_goals, by_parent=by_parent,
         standalone_tasks=standalone_tasks, users=users,
         fire_breakdown=fire_breakdown, surplus_display=surplus_display,
+        strategy_areas=STRATEGY_AREAS, strategies_by_area=strategies_by_area,
     )
 
 
@@ -652,6 +669,289 @@ def toggle_goal_status(goal_id):
     new_status = "active" if goal["status"] == "done" else "done"
     goals_store.set_goal_status(conn, goal_id, new_status, int(current_user.id))
     return redirect(_safe_next("routes.goal_detail", goal_id=goal_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2 Step 4 — strategies
+# ─────────────────────────────────────────────────────────────────────────────
+
+STRATEGY_STATUSES = ("idea", "in progress", "active", "parked", "archived")
+RISKS_CHILDCARE_VALUES = ("yes", "no", "unknown")
+
+
+def _coerce_optional_numeric(raw: str | None) -> float | None:
+    """Blank = unknown, stored as NULL, never defaulted to zero. A real,
+    known zero effect must be typed as "0" (Shannon, 1 Nov 2026)."""
+    raw = (raw or "").strip()
+    if raw == "":
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        abort(400, description=f"Not a number: {raw!r}")
+
+
+def _parse_strategy_form(form) -> dict:
+    title = (form.get("title") or "").strip()
+    if not title:
+        abort(400, description="Missing title")
+    area = form.get("area")
+    if area not in STRATEGY_AREAS:
+        abort(400, description="Invalid area")
+    status = form.get("status") or "idea"
+    if status not in STRATEGY_STATUSES:
+        abort(400, description="Invalid status")
+    risks = form.get("risks_childcare_eligibility") or "unknown"
+    if risks not in RISKS_CHILDCARE_VALUES:
+        abort(400, description="Invalid risks_childcare_eligibility")
+    return dict(
+        title=title,
+        detail=(form.get("detail") or "").strip(),
+        area=area,
+        status=status,
+        work_lives_in=(form.get("work_lives_in") or "").strip(),
+        effect_on_net_worth=_coerce_optional_numeric(form.get("effect_on_net_worth")),
+        effect_on_passive_income=_coerce_optional_numeric(form.get("effect_on_passive_income")),
+        risks_childcare_eligibility=risks,
+        from_when=(form.get("from_when") or "").strip() or None,
+    )
+
+
+def _parse_lever_from_form(form, known_fact_keys: set) -> dict | None:
+    """dimension validated app-side against the curated set of known fact
+    keys (app/fact_labels.py) — facts have no per-key table row to foreign
+    key against (Shannon, 1 Nov 2026: 'validated app-side against a
+    curated set')."""
+    dimension = (form.get("lever_dimension") or "").strip()
+    if not dimension:
+        return None
+    if dimension not in known_fact_keys:
+        abort(400, description=f"Unknown fact key for lever dimension: {dimension}")
+    delta_raw = form.get("lever_delta")
+    from_date = form.get("lever_from_date")
+    if not delta_raw or not from_date:
+        abort(400, description="Lever delta and from_date are required when a dimension is set")
+    return {"dimension": dimension, "delta": float(delta_raw), "from_date": from_date}
+
+
+@bp.route("/strategies/new")
+@login_required
+def new_strategy():
+    if not can_edit_strategy(current_user.role):
+        abort(403)
+    conn = get_conn()
+    return render_template(
+        "strategy_form.html", user=current_user, strategy=None,
+        goals=goals_store.list_goals(conn), linked_goal_ids=[],
+        areas=STRATEGY_AREAS, statuses=STRATEGY_STATUSES, lever=None,
+    )
+
+
+@bp.route("/strategies", methods=["POST"])
+@login_required
+def create_strategy():
+    if not can_edit_strategy(current_user.role):
+        abort(403)
+    new_status = request.form.get("status") or "idea"
+    if not can_set_strategy_status(current_user.role, new_status):
+        abort(403)
+    conn = get_conn()
+    fields = _parse_strategy_form(request.form)
+    source = "shannon" if current_user.role == "owner" else "asha"
+    strategy_id = strategies_store.create_strategy(conn, **fields, source=source, user_id=int(current_user.id))
+
+    goal_ids = [int(v) for v in request.form.getlist("goal_ids")]
+    strategies_store.set_strategy_goal_links(conn, strategy_id, goal_ids)
+
+    lever = _parse_lever_from_form(request.form, set(FACT_LABELS.keys()))
+    strategies_store.set_strategy_levers(conn, strategy_id, [lever] if lever else [])
+
+    return redirect(url_for("routes.strategy_detail", strategy_id=strategy_id))
+
+
+@bp.route("/strategies/<int:strategy_id>")
+@login_required
+def strategy_detail(strategy_id):
+    conn = get_conn()
+    strategy = strategies_store.get_strategy(conn, strategy_id)
+    if strategy is None:
+        abort(404)
+    strategy["stale"] = is_strategy_stale(strategy["last_reviewed_date"])
+    goal_ids = strategies_store.list_strategy_goal_ids(conn, strategy_id)
+    goals_by_id = {g["id"]: g for g in goals_store.list_goals(conn)}
+    linked_goals = [goals_by_id[gid] for gid in goal_ids if gid in goals_by_id]
+    levers = strategies_store.list_strategy_levers(conn, strategy_id)
+    steps = strategies_store.list_strategy_steps(conn, strategy_id)
+    users = {u["id"]: u for u in goals_store.list_users(conn)}
+    return render_template(
+        "strategy_detail.html", user=current_user, strategy=strategy,
+        linked_goals=linked_goals, levers=levers, steps=steps, users=users,
+        can_edit=can_edit_strategy(current_user.role),
+        can_archive_or_delete=can_archive_or_delete_strategy(current_user.role),
+        can_toggle_step=lambda step: can_toggle_strategy_step(
+            current_user.role, int(current_user.id), step["assignee_user_id"]
+        ),
+    )
+
+
+@bp.route("/strategies/<int:strategy_id>/edit")
+@login_required
+def edit_strategy(strategy_id):
+    if not can_edit_strategy(current_user.role):
+        abort(403)
+    conn = get_conn()
+    strategy = strategies_store.get_strategy(conn, strategy_id)
+    if strategy is None:
+        abort(404)
+    linked_goal_ids = strategies_store.list_strategy_goal_ids(conn, strategy_id)
+    levers = strategies_store.list_strategy_levers(conn, strategy_id)
+    return render_template(
+        "strategy_form.html", user=current_user, strategy=strategy,
+        goals=goals_store.list_goals(conn), linked_goal_ids=linked_goal_ids,
+        areas=STRATEGY_AREAS, statuses=STRATEGY_STATUSES, lever=levers[0] if levers else None,
+    )
+
+
+@bp.route("/strategies/<int:strategy_id>/edit", methods=["POST"])
+@login_required
+def update_strategy(strategy_id):
+    if not can_edit_strategy(current_user.role):
+        abort(403)
+    conn = get_conn()
+    if strategies_store.get_strategy(conn, strategy_id) is None:
+        abort(404)
+    new_status = request.form.get("status") or "idea"
+    if not can_set_strategy_status(current_user.role, new_status):
+        abort(403)
+    fields = _parse_strategy_form(request.form)
+    fields["last_reviewed_date"] = request.form.get("last_reviewed_date") or None
+    strategies_store.update_strategy(conn, strategy_id, fields, user_id=int(current_user.id))
+
+    goal_ids = [int(v) for v in request.form.getlist("goal_ids")]
+    strategies_store.set_strategy_goal_links(conn, strategy_id, goal_ids)
+
+    lever = _parse_lever_from_form(request.form, set(FACT_LABELS.keys()))
+    strategies_store.set_strategy_levers(conn, strategy_id, [lever] if lever else [])
+
+    return redirect(url_for("routes.strategy_detail", strategy_id=strategy_id))
+
+
+@bp.route("/strategies/<int:strategy_id>/archive-confirm")
+@owner_required
+def strategy_archive_confirm(strategy_id):
+    conn = get_conn()
+    strategy = strategies_store.get_strategy(conn, strategy_id)
+    if strategy is None:
+        abort(404)
+    return render_template("strategy_archive_confirm.html", user=current_user, strategy=strategy)
+
+
+@bp.route("/strategies/<int:strategy_id>/archive", methods=["POST"])
+@owner_required
+def archive_strategy(strategy_id):
+    conn = get_conn()
+    if strategies_store.get_strategy(conn, strategy_id) is None:
+        abort(404)
+    reason = (request.form.get("reason") or "").strip()
+    if not reason:
+        abort(400, description="A reason is required to archive")
+    strategies_store.archive_strategy(
+        conn, strategy_id, reason=reason, archived_date=date.today(), user_id=int(current_user.id),
+    )
+    return redirect(url_for("routes.goals_list"))
+
+
+@bp.route("/strategies/<int:strategy_id>/delete-confirm")
+@owner_required
+def strategy_delete_confirm(strategy_id):
+    conn = get_conn()
+    strategy = strategies_store.get_strategy(conn, strategy_id)
+    if strategy is None:
+        abort(404)
+    steps = strategies_store.list_strategy_steps(conn, strategy_id)
+    return render_template("strategy_delete_confirm.html", user=current_user, strategy=strategy, steps=steps)
+
+
+@bp.route("/strategies/<int:strategy_id>/delete", methods=["POST"])
+@owner_required
+def delete_strategy(strategy_id):
+    conn = get_conn()
+    if strategies_store.get_strategy(conn, strategy_id) is None:
+        abort(404)
+    strategies_store.delete_strategy(conn, strategy_id, user_id=int(current_user.id))
+    return redirect(url_for("routes.goals_list"))
+
+
+# ── Strategy steps (mirrors tasks, different permissions) ───────────────
+
+@bp.route("/strategy-steps", methods=["POST"])
+@login_required
+def create_strategy_step():
+    if not can_edit_strategy(current_user.role):
+        abort(403)
+    strategy_id_raw = request.form.get("strategy_id")
+    if not strategy_id_raw:
+        abort(400, description="Missing strategy_id")
+    strategy_id = int(strategy_id_raw)
+    conn = get_conn()
+    if strategies_store.get_strategy(conn, strategy_id) is None:
+        abort(404)
+    title = (request.form.get("title") or "").strip()
+    if not title:
+        abort(400, description="Missing title")
+    assignee_raw = request.form.get("assignee_user_id")
+    assignee_user_id = int(assignee_raw) if assignee_raw else None
+    strategies_store.create_strategy_step(
+        conn, strategy_id=strategy_id, title=title, assignee_user_id=assignee_user_id,
+        user_id=int(current_user.id),
+    )
+    return redirect(_safe_next("routes.strategy_detail", strategy_id=strategy_id))
+
+
+@bp.route("/strategy-steps/<int:step_id>/edit", methods=["POST"])
+@login_required
+def update_strategy_step(step_id):
+    if not can_edit_strategy(current_user.role):
+        abort(403)
+    conn = get_conn()
+    step = strategies_store.get_strategy_step(conn, step_id)
+    if step is None:
+        abort(404)
+    title = (request.form.get("title") or "").strip()
+    if not title:
+        abort(400, description="Missing title")
+    assignee_raw = request.form.get("assignee_user_id")
+    assignee_user_id = int(assignee_raw) if assignee_raw else None
+    strategies_store.update_strategy_step(
+        conn, step_id, title=title, assignee_user_id=assignee_user_id, user_id=int(current_user.id),
+    )
+    return redirect(_safe_next("routes.strategy_detail", strategy_id=step["strategy_id"]))
+
+
+@bp.route("/strategy-steps/<int:step_id>/delete", methods=["POST"])
+@login_required
+def delete_strategy_step(step_id):
+    if not can_edit_strategy(current_user.role):
+        abort(403)
+    conn = get_conn()
+    step = strategies_store.get_strategy_step(conn, step_id)
+    if step is None:
+        abort(404)
+    strategies_store.delete_strategy_step(conn, step_id)
+    return redirect(_safe_next("routes.strategy_detail", strategy_id=step["strategy_id"]))
+
+
+@bp.route("/strategy-steps/<int:step_id>/toggle", methods=["POST"])
+@login_required
+def toggle_strategy_step(step_id):
+    conn = get_conn()
+    step = strategies_store.get_strategy_step(conn, step_id)
+    if step is None:
+        abort(404)
+    if not can_toggle_strategy_step(current_user.role, int(current_user.id), step["assignee_user_id"]):
+        abort(403)
+    strategies_store.toggle_strategy_step(conn, step_id, not step["done"], int(current_user.id))
+    return redirect(_safe_next("routes.strategy_detail", strategy_id=step["strategy_id"]))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

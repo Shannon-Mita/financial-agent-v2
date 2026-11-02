@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit strategy" if strategy else "New strategy" }}{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('routes.goals_list') }}">&larr; All goals</a></p>
+  <h1>{{ "Edit strategy" if strategy else "New strategy" }}</h1>
+
+  <form method="post" action="{{ url_for('routes.update_strategy', strategy_id=strategy.id) if strategy else url_for('routes.create_strategy') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="field-label">Title</label>
+    <input type="text" name="title" value="{{ strategy.title if strategy else '' }}" required>
+
+    <label class="field-label">Detail</label>
+    <textarea name="detail">{{ strategy.detail if strategy else '' }}</textarea>
+
+    <label class="field-label">Area</label>
+    <select name="area">
+      {% for a in areas %}
+      <option value="{{ a }}" {% if strategy and strategy.area == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="field-label">Status</label>
+    <select name="status">
+      {% for s in statuses %}
+      {% if s != "archived" or user.role == "owner" %}
+      <option value="{{ s }}" {% if strategy and strategy.status == s %}selected{% endif %}>{{ s }}</option>
+      {% endif %}
+      {% endfor %}
+    </select>
+    {% if user.role != "owner" %}
+    <p class="readonly-note">Archiving is owner-only — use the Archive button on the strategy's page instead.</p>
+    {% endif %}
+
+    <label class="field-label">Work lives in</label>
+    <input type="text" name="work_lives_in" value="{{ strategy.work_lives_in if strategy else '' }}" placeholder="project or repo, or &quot;here&quot;">
+
+    <label class="field-label">Effect on net worth (£ by 5 Oct 2030 — leave blank if unknown, "?")</label>
+    <input type="number" step="0.01" name="effect_on_net_worth"
+           value="{{ strategy.effect_on_net_worth if strategy and strategy.effect_on_net_worth is not none else '' }}">
+
+    <label class="field-label">Effect on passive income (£/month after tax by 5 Oct 2030 — leave blank if unknown, "?")</label>
+    <input type="number" step="0.01" name="effect_on_passive_income"
+           value="{{ strategy.effect_on_passive_income if strategy and strategy.effect_on_passive_income is not none else '' }}">
+
+    <label class="field-label">Risks 30-hours childcare eligibility</label>
+    <select name="risks_childcare_eligibility">
+      <option value="unknown" {% if not strategy or strategy.risks_childcare_eligibility == "unknown" %}selected{% endif %}>Unknown</option>
+      <option value="yes" {% if strategy and strategy.risks_childcare_eligibility == "yes" %}selected{% endif %}>Yes</option>
+      <option value="no" {% if strategy and strategy.risks_childcare_eligibility == "no" %}selected{% endif %}>No</option>
+    </select>
+
+    <label class="field-label">From when</label>
+    <input type="text" name="from_when" value="{{ strategy.from_when if strategy and strategy.from_when else '' }}">
+
+    {% if strategy %}
+    <label class="field-label">Last reviewed date</label>
+    <input type="date" name="last_reviewed_date" value="{{ strategy.last_reviewed_date.isoformat() if strategy.last_reviewed_date else '' }}">
+    {% endif %}
+
+    <label class="field-label">Linked goals / milestones</label>
+    {% for g in goals %}
+    <label>
+      <input type="checkbox" name="goal_ids" value="{{ g.id }}"
+        {% if g.id in linked_goal_ids %}checked{% endif %}> {{ g.title }}
+    </label>
+    {% endfor %}
+
+    <fieldset>
+      <legend>Lever (optional — the numeric assumption the engine reads)</legend>
+      <label class="field-label">Dimension (an existing fact key)</label>
+      <input type="text" name="lever_dimension" value="{{ lever.dimension if lever else '' }}" placeholder="e.g. income.shannon.paye_salary">
+      <label class="field-label">Delta</label>
+      <input type="number" step="0.01" name="lever_delta" value="{{ lever.delta if lever else '' }}">
+      <label class="field-label">From date</label>
+      <input type="date" name="lever_from_date" value="{{ lever.from_date.isoformat() if lever and lever.from_date else '' }}">
+    </fieldset>
+
+    <button type="submit">{{ "Save changes" if strategy else "Create strategy" }}</button>
+  </form>
+{% endblock %}

@@ -27,10 +27,11 @@ from datetime import datetime, timezone
 
 import psycopg2
 
-# Every table in migrations/001_init.sql + 002_goals.sql, in an order that's
-# safe to restore in (parents before the rows that reference them) — see
-# scripts/restore_data.py. Columns are listed explicitly (not `SELECT *`) so
-# the export's shape is stable even if a column is ever reordered.
+# Every table in migrations/001_init.sql + 002_goals.sql + 003_strategies.sql,
+# in an order that's safe to restore in (parents before the rows that
+# reference them) — see scripts/restore_data.py. Columns are listed
+# explicitly (not `SELECT *`) so the export's shape is stable even if a
+# column is ever reordered.
 TABLES = {
     "users": ("id", "google_sub", "email", "role", "created_at"),
     "facts": (
@@ -52,11 +53,23 @@ TABLES = {
         "id", "entity_type", "entity_id", "event_type", "snapshot",
         "changed_by_user_id", "changed_at",
     ),
+    "strategies": (
+        "id", "title", "detail", "area", "status", "work_lives_in", "effect_on_net_worth",
+        "effect_on_passive_income", "risks_childcare_eligibility", "from_when",
+        "archived_reason", "archived_date", "last_reviewed_date", "source",
+        "created_at", "created_by_user_id", "updated_at", "updated_by_user_id",
+    ),
+    "strategy_goal_links": ("strategy_id", "goal_id"),
+    "strategy_levers": ("id", "strategy_id", "dimension", "delta", "from_date"),
+    "strategy_steps": (
+        "id", "strategy_id", "title", "assignee_user_id", "done", "done_at",
+        "done_by_user_id", "created_at", "created_by_user_id",
+    ),
 }
 
 # Row order within each table — "id" everywhere there is one; goal_assignees
 # has no single-column primary key, so order by its composite key instead.
-ORDER_BY = {"goal_assignees": "goal_id, user_id"}
+ORDER_BY = {"goal_assignees": "goal_id, user_id", "strategy_goal_links": "strategy_id, goal_id"}
 
 
 def export_all(conn) -> dict:

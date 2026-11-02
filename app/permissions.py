@@ -164,6 +164,43 @@ def can_toggle_task(role: str, user_id: int, assignee_user_id: int | None) -> bo
     return assignee_user_id == user_id
 
 
+def can_edit_strategy(role: str) -> bool:
+    """Shannon and Asha can both add and edit any strategy, including each
+    other's (Shannon, 1 Nov 2026) — the first object in this app where
+    edit rights are not owner-only or creator/assignee-gated. Also governs
+    adding/editing a strategy's steps, which reuse this same unconditional
+    rule — only toggling a step is gated (see can_toggle_strategy_step)."""
+    return role in (ROLE_OWNER, ROLE_MEMBER)
+
+
+def can_set_strategy_status(role: str, new_status: str) -> bool:
+    """Setting status via the plain edit form. Archiving is its own
+    owner-only action (with a required reason/date, see
+    can_archive_or_delete_strategy) — a member's edit payload setting
+    status=archived directly must be blocked here too, not just omitted
+    from her form's dropdown (never trust a hidden control)."""
+    if new_status == "archived":
+        return role == ROLE_OWNER
+    return can_edit_strategy(role)
+
+
+def can_archive_or_delete_strategy(role: str) -> bool:
+    """Archive (with a reason) and delete: Shannon only, consistent with
+    the existing rule that the partner cannot delete."""
+    return role == ROLE_OWNER
+
+
+def can_toggle_strategy_step(role: str, user_id: int, assignee_user_id: int | None) -> bool:
+    """Either person may add/edit a step (can_edit_strategy); only the
+    assignee may tick it done/undone — same tick-only-your-own rule as
+    can_toggle_task, but add/edit is open to both here, unlike tasks."""
+    if role == ROLE_OWNER:
+        return True
+    if role != ROLE_MEMBER:
+        return False
+    return assignee_user_id == user_id
+
+
 def can_toggle_goal_status(
     role: str, user_id: int, goal_type: str, assignee_user_ids
 ) -> bool:

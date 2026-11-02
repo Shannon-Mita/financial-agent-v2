@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ strategy.title }}{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('routes.goals_list') }}">&larr; All goals</a></p>
+  <h1>{{ strategy.title }}
+    {% if strategy.status == "archived" %}<span class="badge locked">archived</span>{% endif %}
+    {% if strategy.stale %}<span class="badge stale">stale</span>{% endif %}
+  </h1>
+
+  <div class="card">
+    <div class="row"><span class="label">Area</span><span>{{ strategy.area }}</span></div>
+    <div class="row"><span class="label">Status</span><span>{{ strategy.status or "?" }}</span></div>
+    <div class="row"><span class="label">Work lives in</span><span>{{ strategy.work_lives_in or "—" }}</span></div>
+    <div class="row"><span class="label">Effect on net worth</span>
+      <span>{% if strategy.effect_on_net_worth is none %}?{% else %}£{{ "{:,.0f}".format(strategy.effect_on_net_worth) }}{% endif %}</span></div>
+    <div class="row"><span class="label">Effect on passive income</span>
+      <span>{% if strategy.effect_on_passive_income is none %}?{% else %}£{{ "{:,.0f}".format(strategy.effect_on_passive_income) }}/month{% endif %}</span></div>
+    <div class="row"><span class="label">Risks childcare eligibility</span><span>{{ strategy.risks_childcare_eligibility }}</span></div>
+    <div class="row"><span class="label">From when</span><span>{{ strategy.from_when or "?" }}</span></div>
+    <div class="row"><span class="label">Last reviewed</span>
+      <span>{{ strategy.last_reviewed_date.isoformat() if strategy.last_reviewed_date else "?" }}</span></div>
+    {% if strategy.status == "archived" %}
+    <div class="row"><span class="label">Archived reason</span><span>{{ strategy.archived_reason }}</span></div>
+    <div class="row"><span class="label">Archived date</span><span>{{ strategy.archived_date }}</span></div>
+    {% endif %}
+    {% if strategy.detail %}<p>{{ strategy.detail }}</p>{% endif %}
+
+    {% if can_edit %}
+    <a href="{{ url_for('routes.edit_strategy', strategy_id=strategy.id) }}"><button type="button" class="small secondary">Edit</button></a>
+    {% endif %}
+    {% if can_archive_or_delete %}
+    {% if strategy.status != "archived" %}
+    <a href="{{ url_for('routes.strategy_archive_confirm', strategy_id=strategy.id) }}"><button type="button" class="small secondary">Archive</button></a>
+    {% endif %}
+    <a href="{{ url_for('routes.strategy_delete_confirm', strategy_id=strategy.id) }}"><button type="button" class="small danger">Delete</button></a>
+    {% endif %}
+  </div>
+
+  {% if linked_goals %}
+  <h2>Linked goals / milestones</h2>
+  {% for g in linked_goals %}
+  <div class="card sub"><a href="{{ url_for('routes.goal_detail', goal_id=g.id) }}">{{ g.title }}</a></div>
+  {% endfor %}
+  {% endif %}
+
+  {% if levers %}
+  <h2>Levers</h2>
+  {% for l in levers %}
+  <div class="card sub">
+    <div class="row"><span class="label">Dimension</span><span>{{ l.dimension }}</span></div>
+    <div class="row"><span class="label">Delta</span><span>{{ l.delta }}</span></div>
+    <div class="row"><span class="label">From</span><span>{{ l.from_date }}</span></div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <h2>Steps</h2>
+  {% for s in steps %}
+  <div class="card task{% if s.done %} done{% endif %}">
+    {% if can_toggle_step(s) %}
+    <form method="post" action="{{ url_for('routes.toggle_strategy_step', step_id=s.id) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}">
+      <button type="submit" class="small{% if s.done %} secondary{% endif %}">{{ "Undo" if s.done else "Done" }}</button>
+    </form>
+    {% endif %}
+    <label>{{ s.title }}{% if s.assignee_user_id and users.get(s.assignee_user_id) %} — {{ users[s.assignee_user_id].email }}{% endif %}</label>
+    {% if can_edit %}
+    <form method="post" action="{{ url_for('routes.delete_strategy_step', step_id=s.id) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}">
+      <button type="submit" class="small danger">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if not steps %}<p class="readonly-note">No steps yet.</p>{% endif %}
+
+  {% if can_edit %}
+  <div class="card">
+    <div class="card-title">Add a step</div>
+    <form method="post" action="{{ url_for('routes.create_strategy_step') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="strategy_id" value="{{ strategy.id }}">
+      <input type="hidden" name="next" value="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}">
+      <label class="field-label">Title</label>
+      <input type="text" name="title" required>
+      <label class="field-label">Assign to</label>
+      <select name="assignee_user_id">
+        <option value="">— unassigned —</option>
+        {% for uid, u in users.items() %}
+        <option value="{{ uid }}">{{ u.email }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Add step</button>
+    </form>
+  </div>
+  {% endif %}
+{% endblock %}

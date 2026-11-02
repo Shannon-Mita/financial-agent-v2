@@ -140,6 +140,40 @@
   <p class="readonly-note">No goals yet.</p>
   {% endif %}
 
+  <h2>Strategies</h2>
+  <a href="{{ url_for('routes.new_strategy') }}"><button type="button">+ New strategy</button></a>
+
+  {% macro strategy_card(s) %}
+  <div class="card">
+    <div class="card-title">
+      <a href="{{ url_for('routes.strategy_detail', strategy_id=s.id) }}">{{ s.title }}</a>
+      {% if s.stale %}<span class="badge stale">stale</span>{% endif %}
+    </div>
+    <div class="row"><span class="label">Status</span><span>{{ s.status or "?" }}</span></div>
+    <div class="row"><span class="label">Effect on net worth</span>
+      <span>{% if s.effect_on_net_worth is none %}?{% else %}£{{ "{:,.0f}".format(s.effect_on_net_worth) }}{% endif %}</span></div>
+    <div class="row"><span class="label">Effect on passive income</span>
+      <span>{% if s.effect_on_passive_income is none %}?{% else %}£{{ "{:,.0f}".format(s.effect_on_passive_income) }}/month{% endif %}</span></div>
+    <div class="row"><span class="label">Risks childcare eligibility</span><span>{{ s.risks_childcare_eligibility }}</span></div>
+    <div class="row"><span class="label">Last reviewed</span>
+      <span>{{ s.last_reviewed_date.isoformat() if s.last_reviewed_date else "?" }}</span></div>
+  </div>
+  {% endmacro %}
+
+  {% for area in strategy_areas %}
+  {% if strategies_by_area.get(area) %}
+  <h3>{{ area }}</h3>
+  <div class="card-grid">
+    {% for s in strategies_by_area[area] %}
+    <div class="grid-cell">{{ strategy_card(s) }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endfor %}
+  {% if not strategies_by_area %}
+  <p class="readonly-note">No strategies yet.</p>
+  {% endif %}
+
   <h2>Tasks not tied to a goal</h2>
   <div class="card-grid">
     {% for t in standalone_tasks %}
