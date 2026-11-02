@@ -21,7 +21,7 @@ from datetime import date
 from . import vendor_path  # noqa: F401  (adds vendor/wealth_core to sys.path)
 from facts_layer import check_freshness
 from recap import calc_monthly_surplus, calc_net_worth
-from tax_engine import DEFAULT_TAX_YEAR, deflate_to_today_money
+from tax_engine import DEFAULT_TAX_YEAR, calc_income_tax, deflate_to_today_money
 
 # ── FIRE accessible-assets breakdown ────────────────────────────────────
 #
@@ -349,8 +349,15 @@ def net_worth_feasibility(goal: dict, facts: dict, *, on: date | None = None,
 
 def passive_income_feasibility(goal: dict, facts: dict, *, on: date | None = None,
                                 tax_year: str = DEFAULT_TAX_YEAR) -> Feasibility:
+    """No verdict, required_monthly, or surplus (Shannon, 3 Nov 2026):
+    comparing a monthly income flow's gap against savings-capacity surplus
+    is a category error — surplus growing doesn't make passive income
+    grow without an actual strategy. No verdict until strategies exist.
+    Net worth is unchanged (it's funded by surplus, so that comparison is
+    valid there). This also means the household surplus facts are no
+    longer required at all for this card — only the target itself."""
     ref = on or date.today()
-    required_keys = list(SURPLUS_REQUIRED_KEYS) + [PASSIVE_INCOME_TARGET_AMOUNT_KEY, PASSIVE_INCOME_TARGET_DATE_KEY]
+    required_keys = [PASSIVE_INCOME_TARGET_AMOUNT_KEY, PASSIVE_INCOME_TARGET_DATE_KEY]
     fresh = check_freshness(facts, required_keys, on=ref)
     if fresh.missing:
         return Feasibility(refused=True, missing_keys=tuple(sorted(fresh.missing)))
@@ -362,16 +369,13 @@ def passive_income_feasibility(goal: dict, facts: dict, *, on: date | None = Non
     current = passive_income_total(facts)
     missing_streams = [k for k in PASSIVE_INCOME_MONTHLY_KEYS + PASSIVE_INCOME_ANNUAL_KEYS if k not in facts]
 
-    surplus = _household_monthly_surplus(facts, tax_year)
-    stale, caveat = _stale_caveat(fresh, STRAIGHT_LINE_CAVEAT + " " + INFLATION_CAVEAT)
-    months_remaining = _whole_months_between(ref, target_date)
-    shortfall, required_monthly, verdict = _shortfall_verdict(current, target_today_money, months_remaining, surplus)
+    stale, caveat = _stale_caveat(fresh, INFLATION_CAVEAT)
+    shortfall = max(0.0, target_today_money - current)
 
     return Feasibility(
         missing_keys=tuple(missing_streams), stale=stale,
         target=target_today_money, target_2030_money=target_2030, current=current,
-        shortfall=shortfall, months_remaining=max(0, months_remaining),
-        required_monthly=required_monthly, surplus=surplus, verdict=verdict, caveat=caveat,
+        shortfall=shortfall, caveat=caveat,
     )
 
 
@@ -380,12 +384,65 @@ def passive_income_feasibility(goal: dict, facts: dict, *, on: date | None = Non
 # surface it. ──────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
+class SurplusBreakdown:
+    """Display-only detail for the surplus card's "how this is
+    calculated" section — never a second implementation of the surplus
+    formula. `result` is always exactly _household_monthly_surplus()'s own
+    return value; the per-person tax figures reuse calc_income_tax(), the
+    same pure building block calc_monthly_surplus() already calls
+    internally — recomputing it for display is the same pattern
+    build_recap() already uses for its own 60%-trap/CB-clawback checks
+    (see vendor/wealth_core/recap/builder.py), not a new formula."""
+    shannon_gross: float
+    shannon_pension: float
+    shannon_income_tax: float
+    shannon_ni: float
+    shannon_take_home: float
+    partner_gross: float
+    partner_pension: float
+    partner_income_tax: float
+    partner_ni: float
+    partner_take_home: float
+    essentials: float
+    lifestyle: float
+    childcare: float
+    other: float
+    result: float
+
+
+def _household_surplus_breakdown(facts: dict, tax_year: str) -> SurplusBreakdown:
+    s_salary = _n(facts["income.shannon.paye_salary"].value)
+    p_salary = _n(facts["income.partner.paye_salary"].value)
+    s_pension = _optional_annual_pension(facts, "pensions.shannon.monthly_employee")
+    p_pension = _optional_annual_pension(facts, "pensions.partner.monthly_employee")
+    essentials = _n(facts["cashflow.monthly_essentials"].value)
+    lifestyle = _n(facts["cashflow.monthly_lifestyle"].value)
+    childcare = _n(facts["cashflow.monthly_childcare"].value)
+    other = _n(facts["cashflow.monthly_other"].value)
+
+    s_tax = calc_income_tax(s_salary, tax_year=tax_year, pension_contribution=s_pension)
+    p_tax = calc_income_tax(p_salary, tax_year=tax_year, pension_contribution=p_pension)
+
+    return SurplusBreakdown(
+        shannon_gross=s_salary, shannon_pension=s_pension,
+        shannon_income_tax=s_tax.income_tax, shannon_ni=s_tax.national_insurance,
+        shannon_take_home=s_tax.take_home,
+        partner_gross=p_salary, partner_pension=p_pension,
+        partner_income_tax=p_tax.income_tax, partner_ni=p_tax.national_insurance,
+        partner_take_home=p_tax.take_home,
+        essentials=essentials, lifestyle=lifestyle, childcare=childcare, other=other,
+        result=_household_monthly_surplus(facts, tax_year),
+    )
+
+
+@dataclass(frozen=True)
 class SurplusDisplay:
     refused: bool = False
     missing_keys: tuple[str, ...] = field(default_factory=tuple)
     stale: tuple[tuple[str, int, int], ...] = field(default_factory=tuple)
     value: float | None = None
     caveat: str = ""
+    breakdown: SurplusBreakdown | None = None
 
 
 def household_surplus(facts: dict, *, on: date | None = None,
@@ -395,5 +452,5 @@ def household_surplus(facts: dict, *, on: date | None = None,
     if fresh.missing:
         return SurplusDisplay(refused=True, missing_keys=tuple(sorted(fresh.missing)))
     stale, caveat = _stale_caveat(fresh, PAYE_ONLY_CAVEAT)
-    value = _household_monthly_surplus(facts, tax_year)
-    return SurplusDisplay(stale=stale, value=value, caveat=caveat)
+    breakdown = _household_surplus_breakdown(facts, tax_year)
+    return SurplusDisplay(stale=stale, value=breakdown.result, caveat=caveat, breakdown=breakdown)

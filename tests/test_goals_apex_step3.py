@@ -268,6 +268,61 @@ def test_goal_detail_page_also_shows_both_money_year_figures(client, pg_conn, ow
     assert "today's money" in body.lower()
 
 
+# ── Passive income card: no verdict/required-monthly (category error);
+# net worth unchanged ─────────────────────────────────────────────────────
+
+def test_passive_income_card_has_no_required_monthly_label(client, pg_conn, owner_user_id, member_user_id):
+    _seed_all_facts(pg_conn, owner_user_id)
+    _create_apex_goals(pg_conn, owner_user_id, member_user_id)
+    login(client, owner_user_id)
+    body = client.get("/goals").data.decode()
+    # Isolate the Passive income apex card from the Net worth one.
+    pi_start = body.find(">Passive income<")
+    nw_start = body.find(">Net worth<")
+    pi_card = body[pi_start:nw_start] if pi_start < nw_start else body[pi_start:]
+    assert "month needed" not in pi_card.lower()
+    assert "badge on-track" not in pi_card and "badge short" not in pi_card
+    assert "Gap per month" in pi_card
+
+
+def test_net_worth_card_still_has_required_monthly_and_status(client, pg_conn, owner_user_id, member_user_id):
+    _seed_all_facts(pg_conn, owner_user_id)
+    _create_apex_goals(pg_conn, owner_user_id, member_user_id)
+    login(client, owner_user_id)
+    body = client.get("/goals").data.decode()
+    nw_start = body.find(">Net worth<")
+    pi_start = body.find(">Passive income<")
+    nw_card = body[nw_start:pi_start] if nw_start < pi_start else body[nw_start:]
+    assert "month needed" in nw_card.lower()
+    assert "badge on-track" in nw_card or "badge short" in nw_card
+
+
+# ── Surplus card "how this is calculated" breakdown ──────────────────────
+
+def test_surplus_card_shows_how_this_is_calculated_breakdown(client, pg_conn, owner_user_id):
+    store = PostgresFactStore(pg_conn)
+    for key, val, unit, cat in SURPLUS_FACTS:
+        store.set(Fact.create(key, val, unit, Source.USER_STATED, cat), owner="joint", entered_by_user_id=owner_user_id)
+    login(client, owner_user_id)
+    body = client.get("/goals").data.decode()
+    assert "How this is calculated" in body
+    assert "<details>" in body
+    assert "income tax" in body.lower()
+    assert "take-home" in body.lower()
+    assert "Essentials" in body
+
+
+def test_passive_income_detail_page_does_not_crash_and_has_no_required_monthly(client, pg_conn, owner_user_id, member_user_id):
+    _seed_all_facts(pg_conn, owner_user_id)
+    _, passive_income_id = _create_apex_goals(pg_conn, owner_user_id, member_user_id)
+    login(client, owner_user_id)
+    resp = client.get(f"/goals/{passive_income_id}")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "needed" not in body.lower()
+    assert "None" not in body
+
+
 def test_owner_can_create_net_worth_goal_fact_backed(client, pg_conn, owner_user_id):
     login(client, owner_user_id)
     page = client.get("/goals/new")

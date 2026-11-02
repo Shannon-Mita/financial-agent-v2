@@ -24,7 +24,7 @@ from app.vendor_path import ensure_on_path
 
 ensure_on_path()
 from facts_layer import Fact, Source, Unit  # noqa: E402
-from tax_engine import deflate_to_today_money  # noqa: E402
+from tax_engine import calc_income_tax, deflate_to_today_money  # noqa: E402
 
 TODAY = date(2026, 10, 29)
 
@@ -528,3 +528,110 @@ def test_household_surplus_refuses_when_a_required_fact_is_missing():
     s = household_surplus(facts, on=TODAY, tax_year="2026/27")
     assert s.refused is True
     assert "cashflow.monthly_essentials" in s.missing_keys
+
+
+# ── Surplus "how this is calculated" breakdown ───────────────────────────
+# Display-only detail — must never be a second implementation of the
+# surplus formula itself (the result must always equal the shared
+# _household_monthly_surplus()/calc_monthly_surplus() value).
+
+def test_surplus_breakdown_result_matches_the_authoritative_surplus_value():
+    s = household_surplus(base_facts(), on=TODAY, tax_year="2026/27")
+    assert s.breakdown is not None
+    assert s.breakdown.result == s.value
+
+
+def test_surplus_breakdown_shannon_fields_match_calc_income_tax_directly():
+    facts = base_facts()
+    s = household_surplus(facts, on=TODAY, tax_year="2026/27")
+    expected = calc_income_tax(55000, tax_year="2026/27", pension_contribution=0)
+    assert s.breakdown.shannon_gross == 55000
+    assert s.breakdown.shannon_pension == 0
+    assert s.breakdown.shannon_income_tax == expected.income_tax
+    assert s.breakdown.shannon_ni == expected.national_insurance
+    assert s.breakdown.shannon_take_home == expected.take_home
+
+
+def test_surplus_breakdown_partner_fields_match_calc_income_tax_directly():
+    facts = base_facts()
+    s = household_surplus(facts, on=TODAY, tax_year="2026/27")
+    expected = calc_income_tax(70000, tax_year="2026/27", pension_contribution=0)
+    assert s.breakdown.partner_gross == 70000
+    assert s.breakdown.partner_income_tax == expected.income_tax
+    assert s.breakdown.partner_ni == expected.national_insurance
+    assert s.breakdown.partner_take_home == expected.take_home
+
+
+def test_surplus_breakdown_shows_the_four_spending_lines():
+    s = household_surplus(base_facts(), on=TODAY, tax_year="2026/27")
+    assert s.breakdown.essentials == 2000
+    assert s.breakdown.lifestyle == 800
+    assert s.breakdown.childcare == 600
+    assert s.breakdown.other == 200
+
+
+def test_surplus_breakdown_absent_when_refused():
+    facts = base_facts()
+    del facts["cashflow.monthly_essentials"]
+    s = household_surplus(facts, on=TODAY, tax_year="2026/27")
+    assert s.refused is True
+    assert s.breakdown is None
+
+
+def test_standalone_surplus_card_and_feasibility_cards_share_the_same_surplus_value():
+    """household_surplus() (the standalone card) and feasibility_for_goal()
+    (a goal's feasibility card) must derive surplus identically — both
+    call the same shared _household_monthly_surplus()."""
+    f_goal = feasibility_for_goal(DEPOSIT_GOAL, base_facts(), on=TODAY, tax_year="2026/27")
+    s = household_surplus(base_facts(), on=TODAY, tax_year="2026/27")
+    assert s.value == pytest.approx(f_goal.surplus)
+    assert s.value == pytest.approx(s.breakdown.result)
+
+
+# ── Passive income card: no verdict/required-monthly/surplus — comparing
+# a monthly income flow's gap against savings-capacity surplus is a
+# category error (Shannon, 3 Nov 2026). Net worth is unchanged. ─────────
+
+def test_passive_income_feasibility_has_no_verdict():
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, passive_income_goal_facts(), on=TODAY, tax_year="2026/27")
+    assert f.verdict == ""
+
+
+def test_passive_income_feasibility_has_no_required_monthly():
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, passive_income_goal_facts(), on=TODAY, tax_year="2026/27")
+    assert f.required_monthly is None
+
+
+def test_passive_income_feasibility_has_no_surplus():
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, passive_income_goal_facts(), on=TODAY, tax_year="2026/27")
+    assert f.surplus is None
+
+
+def test_passive_income_feasibility_gap_is_target_minus_current():
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, passive_income_goal_facts(), on=TODAY, tax_year="2026/27")
+    assert f.shortfall == pytest.approx(max(0.0, f.target - f.current))
+
+
+def test_passive_income_feasibility_does_not_require_household_surplus_facts():
+    """Unlike before, missing income/spending facts must not refuse the
+    passive income card — it no longer uses the household surplus at all."""
+    facts = passive_income_goal_facts()
+    del facts["income.shannon.paye_salary"]
+    del facts["cashflow.monthly_essentials"]
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, facts, on=TODAY, tax_year="2026/27")
+    assert f.refused is False
+    assert f.current == pytest.approx(PASSIVE_INCOME_CURRENT)
+
+
+def test_passive_income_feasibility_caveat_is_inflation_note_only():
+    f = passive_income_feasibility(PASSIVE_INCOME_GOAL, passive_income_goal_facts(), on=TODAY, tax_year="2026/27")
+    assert "2030 money" in f.caveat
+    assert "straight-line" not in f.caveat.lower()
+
+
+def test_net_worth_feasibility_still_has_verdict_required_monthly_and_surplus():
+    """Regression guard: item 2 only changes the passive income card."""
+    f = net_worth_feasibility(NET_WORTH_GOAL, net_worth_facts(), on=TODAY, tax_year="2026/27")
+    assert f.verdict != ""
+    assert f.required_monthly is not None
+    assert f.surplus is not None

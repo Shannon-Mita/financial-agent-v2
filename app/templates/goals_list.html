@@ -17,6 +17,25 @@
     <div class="card-title">Current monthly surplus</div>
     <div class="row"><span class="label">Surplus</span><span>£{{ "{:,.0f}".format(surplus_display.value) }}/month</span></div>
     {% if surplus_display.caveat %}<p class="caveat">{{ surplus_display.caveat }}</p>{% endif %}
+    {% set b = surplus_display.breakdown %}
+    <details>
+      <summary>How this is calculated</summary>
+      <div class="row"><span class="label">Shannon — gross</span><span>£{{ "{:,.0f}".format(b.shannon_gross) }}/yr</span></div>
+      <div class="row"><span class="label">Shannon — pension</span><span>£{{ "{:,.0f}".format(b.shannon_pension) }}/yr</span></div>
+      <div class="row"><span class="label">Shannon — income tax</span><span>£{{ "{:,.0f}".format(b.shannon_income_tax) }}/yr</span></div>
+      <div class="row"><span class="label">Shannon — NI</span><span>£{{ "{:,.0f}".format(b.shannon_ni) }}/yr</span></div>
+      <div class="row"><span class="label">Shannon — take-home</span><span>£{{ "{:,.0f}".format(b.shannon_take_home) }}/yr</span></div>
+      <div class="row"><span class="label">Partner — gross</span><span>£{{ "{:,.0f}".format(b.partner_gross) }}/yr</span></div>
+      <div class="row"><span class="label">Partner — pension</span><span>£{{ "{:,.0f}".format(b.partner_pension) }}/yr</span></div>
+      <div class="row"><span class="label">Partner — income tax</span><span>£{{ "{:,.0f}".format(b.partner_income_tax) }}/yr</span></div>
+      <div class="row"><span class="label">Partner — NI</span><span>£{{ "{:,.0f}".format(b.partner_ni) }}/yr</span></div>
+      <div class="row"><span class="label">Partner — take-home</span><span>£{{ "{:,.0f}".format(b.partner_take_home) }}/yr</span></div>
+      <div class="row"><span class="label">Essentials</span><span>£{{ "{:,.0f}".format(b.essentials) }}/month</span></div>
+      <div class="row"><span class="label">Lifestyle</span><span>£{{ "{:,.0f}".format(b.lifestyle) }}/month</span></div>
+      <div class="row"><span class="label">Childcare</span><span>£{{ "{:,.0f}".format(b.childcare) }}/month</span></div>
+      <div class="row"><span class="label">Other</span><span>£{{ "{:,.0f}".format(b.other) }}/month</span></div>
+      <div class="row"><span class="label">Result</span><span>£{{ "{:,.0f}".format(b.result) }}/month</span></div>
+    </details>
   </div>
   {% endif %}
 
@@ -94,6 +113,7 @@
     {% else %}
     <div class="row"><span class="label">Target</span><span>£{{ "{:,.0f}".format(g.feasibility.target) }}</span></div>
     {% endif %}
+    {% if g.feasibility.required_monthly is not none %}
     <div class="row"><span class="label">Gap</span><span>£{{ "{:,.0f}".format(g.feasibility.shortfall) }}</span></div>
     <div class="row">
       <span class="label">£/month needed by 5 Oct 2030</span>
@@ -109,6 +129,12 @@
         {% endif %}
       </span>
     </div>
+    {% else %}
+    <!-- Passive income: no verdict/required-monthly — comparing a monthly
+         income flow's gap against savings-capacity surplus is a category
+         error. No verdict until strategies exist. -->
+    <div class="row"><span class="label">Gap per month</span><span>£{{ "{:,.0f}".format(g.feasibility.shortfall) }}</span></div>
+    {% endif %}
     {% if g.feasibility.missing_keys %}
     <p class="caveat">Missing (treated as zero): {{ g.feasibility.missing_keys | join(", ") }}</p>
     {% endif %}

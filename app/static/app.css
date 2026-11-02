@@ -139,6 +139,19 @@ nav a { font-weight: 600; }
 .flash.success { background: #d9f2e3; color: #0a5; }
 .flash.error { background: #fde2e1; color: #a12; }
 
+/* CSP forbids inline scripts/styles ('self' only, no 'unsafe-inline') — the
+   fade is CSS-only, nothing injected per-element. Error banners get no
+   animation at all: they persist until the user navigates away. Success
+   banners fade over 2s then go pointer-events: none, so a banner the user
+   never dismissed can't keep intercepting clicks meant for the nav
+   underneath it once it's no longer visible. */
+@keyframes flash-fade-out {
+  0%   { opacity: 1; pointer-events: auto; }
+  80%  { opacity: 1; pointer-events: auto; }
+  100% { opacity: 0; pointer-events: none; }
+}
+.flash.success { animation: flash-fade-out 2s forwards; }
+
 .flash.inline-note {
   margin: 0 0 0.5rem;
   box-shadow: none;

@@ -61,6 +61,7 @@
     <div class="row"><span class="label">Target</span><span>£{{ "{:,.0f}".format(feasibility.target) }}</span></div>
     {% endif %}
     <div class="row"><span class="label">Current</span><span>£{{ "{:,.0f}".format(feasibility.current) }}</span></div>
+    {% if feasibility.required_monthly is not none %}
     <div class="row"><span class="label">Shortfall</span><span>£{{ "{:,.0f}".format(feasibility.shortfall) }}</span></div>
     <div class="row"><span class="label">Months remaining</span><span>{{ feasibility.months_remaining }}</span></div>
     <div class="row"><span class="label">Needed / month</span><span>£{{ "{:,.2f}".format(feasibility.required_monthly) }}</span></div>
@@ -75,6 +76,12 @@
         {% endif %}
       </span>
     </div>
+    {% else %}
+    <!-- Passive income: no verdict/required-monthly — comparing a monthly
+         income flow's gap against savings-capacity surplus is a category
+         error. No verdict until strategies exist. -->
+    <div class="row"><span class="label">Gap per month</span><span>£{{ "{:,.0f}".format(feasibility.shortfall) }}</span></div>
+    {% endif %}
     <p class="caveat">{{ feasibility.caveat }}</p>
     {% endif %}
   </div>
