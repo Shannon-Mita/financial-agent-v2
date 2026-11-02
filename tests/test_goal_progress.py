@@ -7,7 +7,14 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.goal_progress import fire_accessible_breakdown, feasibility_for_goal
+from app.goal_progress import (
+    FIRE_ACCESSIBLE_KEYS,
+    PASSIVE_INCOME_ANNUAL_KEYS,
+    PASSIVE_INCOME_MONTHLY_KEYS,
+    feasibility_for_goal,
+    fire_accessible_breakdown,
+    passive_income_total,
+)
 from app.vendor_path import ensure_on_path
 
 ensure_on_path()
@@ -287,3 +294,47 @@ def test_refuses_when_child_benefit_claiming_fact_missing():
     f = feasibility_for_goal(DEPOSIT_GOAL, facts, on=TODAY, tax_year="2026/27")
     assert f.refused is True
     assert "children.0.child_benefit_claiming" in f.missing_keys
+
+
+# ── Passive income total (Stage 2 Step 2, Shannon 2 Nov 2026): three new
+# monthly boxes (rental/business/investments) plus the existing
+# income.*.savings_interest / income.*.dividends facts — the latter are
+# GBP_PER_YEAR (confirmed in vendor/wealth_core/migrate/from_v1.py) and
+# must be divided by 12, never entered twice. ─────────────────────────────
+
+PASSIVE_INCOME_FACTS = {
+    "income.passive.rental": fact("income.passive.rental", 500, Unit.GBP_PER_MONTH, "passive_income"),
+    "income.passive.business": fact("income.passive.business", 300, Unit.GBP_PER_MONTH, "passive_income"),
+    "income.passive.investments": fact("income.passive.investments", 200, Unit.GBP_PER_MONTH, "passive_income"),
+    "income.shannon.savings_interest": fact("income.shannon.savings_interest", 60, Unit.GBP_PER_YEAR, "income"),
+    "income.partner.savings_interest": fact("income.partner.savings_interest", 72, Unit.GBP_PER_YEAR, "income"),
+    "income.shannon.dividends": fact("income.shannon.dividends", 120, Unit.GBP_PER_YEAR, "income"),
+    "income.partner.dividends": fact("income.partner.dividends", 240, Unit.GBP_PER_YEAR, "income"),
+}
+
+
+def test_passive_income_total_sums_three_boxes_plus_interest_and_dividends_monthly():
+    total = passive_income_total(PASSIVE_INCOME_FACTS)
+    assert total == pytest.approx(500 + 300 + 200 + (60 + 72 + 120 + 240) / 12)
+
+
+def test_passive_income_total_treats_missing_facts_as_zero():
+    assert passive_income_total({}) == 0
+
+
+def test_passive_income_total_annual_keys_are_divided_by_12_not_added_raw():
+    """A regression guard against the easy mistake of forgetting the unit
+    conversion — £1,200/yr interest must contribute £100/mo, not £1,200."""
+    facts = {"income.shannon.savings_interest": fact(
+        "income.shannon.savings_interest", 1200, Unit.GBP_PER_YEAR, "income"
+    )}
+    assert passive_income_total(facts) == pytest.approx(100)
+
+
+def test_passive_income_boxes_and_interest_dividends_keys_never_feed_fire_accessible_total():
+    """The three new boxes (and the interest/dividends facts they're summed
+    with) must never be swept into any net-worth-style asset aggregation —
+    FIRE_ACCESSIBLE_KEYS is the one such aggregation that actually runs in
+    this app today."""
+    for key in PASSIVE_INCOME_MONTHLY_KEYS + PASSIVE_INCOME_ANNUAL_KEYS:
+        assert key not in FIRE_ACCESSIBLE_KEYS

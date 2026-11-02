@@ -11,7 +11,7 @@
   {% endmacro %}
   <h1>Household numbers</h1>
 
-  {% if user.role == "owner" and not_yet_set %}
+  {% if not_yet_set %}
   <h2>Not yet set</h2>
   <div class="card-grid">
     {% for item in not_yet_set %}

@@ -57,6 +57,19 @@ CREATABLE_FACT_KEYS = frozenset({
     "goals.fire.target_date",
     "savings.house_deposit.balance",
     "children.0.funded_childcare_30hrs_claiming",
+    "income.passive.rental",
+    "income.passive.business",
+    "income.passive.investments",
+})
+
+# A narrower exception to the owner-only creation rule above: the three
+# passive income boxes are joint from the moment they exist (Shannon,
+# 2 Nov 2026 — "Asha can create/update all three"), so a member may bring
+# them into existence too. Every other creatable key stays owner-only.
+MEMBER_CREATABLE_FACT_KEYS = frozenset({
+    "income.passive.rental",
+    "income.passive.business",
+    "income.passive.investments",
 })
 
 
@@ -75,8 +88,17 @@ def can_create_fact(role: str, key: str) -> bool:
     savings.house_deposit.balance is owner=joint on write, per Shannon's
     answer, but only the owner role may bring the key into existence at
     all) — creation is the sensitive step; writes to an existing row are
-    gated by can_write_fact as normal."""
-    return role == ROLE_OWNER and key in CREATABLE_FACT_KEYS
+    gated by can_write_fact as normal.
+
+    MEMBER_CREATABLE_FACT_KEYS is a narrow, explicit exception: a member
+    may also create those specific keys (the three passive income boxes,
+    joint from the moment they exist) — every other creatable key stays
+    owner-only."""
+    if key not in CREATABLE_FACT_KEYS:
+        return False
+    if role == ROLE_OWNER:
+        return True
+    return role == ROLE_MEMBER and key in MEMBER_CREATABLE_FACT_KEYS
 
 
 def owner_required(view):

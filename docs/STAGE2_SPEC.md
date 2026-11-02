@@ -301,9 +301,14 @@ bots/manual investment — was deleted and the rest renumbered). Every `?` stays
 ## 7. Goals page layout
 
 One page, top to bottom:
-1. The two goals, each with progress against its target.
-2. Their milestones, nested beneath.
-3. Strategies grouped by area (work and income, relocation, business, investing,
+1. **Current monthly surplus** (Shannon, 2 Nov 2026) — shown plainly on the
+   Goals page itself, not only buried inside a goal's own feasibility card,
+   so it's visible without needing a goal that happens to surface it.
+   Noted here for Step 3; **not built yet** — this is a scope addition to
+   the plan, not part of Step 2.
+2. The two goals, each with progress against its target.
+3. Their milestones, nested beneath.
+4. Strategies grouped by area (work and income, relocation, business, investing,
    property, spending), each showing its effect on net worth and on passive
    income, its status, and any `?` gaps.
 

@@ -609,13 +609,17 @@ def test_created_key_moves_from_not_yet_set_into_the_normal_list(client, owner_u
     assert "2030-10-05" in after
 
 
-def test_member_does_not_see_not_yet_set_section_or_its_forms(client, member_user_id):
+def test_member_does_not_see_owner_only_not_yet_set_forms(client, member_user_id):
+    """Owner-only creatable keys stay invisible to a member — but the
+    section itself isn't blanket owner-only any more: the three passive
+    income boxes (Shannon, 2 Nov 2026) are member-creatable too, so the
+    section can legitimately show up for her with just those in it."""
     login(client, member_user_id)
     resp = client.get("/")
     body = resp.data.decode()
-    assert "Not yet set" not in body
     assert 'action="/facts/goals.fire.target_date/update"' not in body
     assert 'action="/facts/savings.house_deposit.balance/update"' not in body
+    assert 'action="/facts/children.0.funded_childcare_30hrs_claiming/update"' not in body
 
 
 def test_member_crafted_post_to_not_yet_set_route_is_403(client, pg_conn, member_user_id):

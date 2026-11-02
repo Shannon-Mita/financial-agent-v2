@@ -45,6 +45,34 @@ HOUSE_DEPOSIT_KEY = "savings.house_deposit.balance"
 FIRE_TARGET_KEY = "goals.fire.target_number"
 
 
+# ── Passive income total (Stage 2 Step 2) ───────────────────────────────
+#
+# Three new monthly boxes (Shannon, 2 Nov 2026) plus the existing
+# income.*.savings_interest / income.*.dividends facts — the household's
+# interest and dividends are NOT new boxes; they're entered once, here, not
+# twice. Those four are GBP_PER_YEAR (vendor/wealth_core/migrate/from_v1.py),
+# while the goal is monthly, so they're divided by 12. None of these seven
+# keys are asset balances — they are income flows and must never be summed
+# into net worth (see FIRE_ACCESSIBLE_KEYS above, a different aggregation).
+PASSIVE_INCOME_MONTHLY_KEYS = (
+    "income.passive.rental",
+    "income.passive.business",
+    "income.passive.investments",
+)
+PASSIVE_INCOME_ANNUAL_KEYS = (
+    "income.shannon.savings_interest",
+    "income.partner.savings_interest",
+    "income.shannon.dividends",
+    "income.partner.dividends",
+)
+
+
+def passive_income_total(facts: dict) -> float:
+    monthly, _ = _sum_present(facts, PASSIVE_INCOME_MONTHLY_KEYS)
+    annual, _ = _sum_present(facts, PASSIVE_INCOME_ANNUAL_KEYS)
+    return monthly + annual / 12
+
+
 def _n(v) -> float:
     try:
         return float(v or 0)

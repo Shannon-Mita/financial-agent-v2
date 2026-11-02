@@ -46,6 +46,9 @@ CREATABLE_FACT_SPECS = {
     "goals.fire.target_date": (Unit.DATE, "goal", "joint"),
     "savings.house_deposit.balance": (Unit.GBP, "balance", "joint"),
     "children.0.funded_childcare_30hrs_claiming": (Unit.BOOL, "profile", "joint"),
+    "income.passive.rental": (Unit.GBP_PER_MONTH, "passive_income", "joint"),
+    "income.passive.business": (Unit.GBP_PER_MONTH, "passive_income", "joint"),
+    "income.passive.investments": (Unit.GBP_PER_MONTH, "passive_income", "joint"),
 }
 
 
@@ -189,17 +192,23 @@ def dashboard():
         rows_by_group[group_for(row["category"])].append(row)
     groups = [(g, rows_by_group[g]) for g in GROUP_ORDER if rows_by_group[g]]
 
+    # Per-key, not a blanket owner-only gate — MEMBER_CREATABLE_FACT_KEYS
+    # (the three passive income boxes) means a member can create some of
+    # these too (Shannon, 2 Nov 2026); each key is still checked against
+    # can_create_fact individually, never shown to someone who can't act
+    # on it.
     not_yet_set = []
-    if current_user.role == "owner":
-        for key in sorted(CREATABLE_FACT_KEYS):
-            if key in current:
-                continue
-            unit, _category, _owner = CREATABLE_FACT_SPECS[key]
-            not_yet_set.append({
-                "key": key,
-                "unit": unit.value,
-                "input_type": _input_type_for_unit(unit),
-            })
+    for key in sorted(CREATABLE_FACT_KEYS):
+        if key in current:
+            continue
+        if not can_create_fact(current_user.role, key):
+            continue
+        unit, _category, _owner = CREATABLE_FACT_SPECS[key]
+        not_yet_set.append({
+            "key": key,
+            "unit": unit.value,
+            "input_type": _input_type_for_unit(unit),
+        })
 
     return render_template("dashboard.html", groups=groups, user=current_user, not_yet_set=not_yet_set)
 

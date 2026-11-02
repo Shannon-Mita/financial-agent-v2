@@ -6,6 +6,7 @@ import pytest
 
 from app.permissions import (
     CREATABLE_FACT_KEYS,
+    MEMBER_CREATABLE_FACT_KEYS,
     PROTECTED_KEY_PREFIXES,
     can_create_fact,
     can_create_task,
@@ -237,7 +238,23 @@ def test_creatable_fact_keys_is_exactly_the_approved_registry():
         "goals.fire.target_date",
         "savings.house_deposit.balance",
         "children.0.funded_childcare_30hrs_claiming",
+        "income.passive.rental",
+        "income.passive.business",
+        "income.passive.investments",
     })
+
+
+def test_member_creatable_fact_keys_is_exactly_the_three_passive_income_boxes():
+    """The three passive income boxes are joint from the moment they exist
+    (Shannon, 2 Nov 2026: 'Asha can create/update all three') — a narrower,
+    explicit exception to the default owner-only-create rule, not a
+    loosening of it: every other creatable key stays owner-only."""
+    assert MEMBER_CREATABLE_FACT_KEYS == frozenset({
+        "income.passive.rental",
+        "income.passive.business",
+        "income.passive.investments",
+    })
+    assert MEMBER_CREATABLE_FACT_KEYS <= CREATABLE_FACT_KEYS
 
 
 @pytest.mark.parametrize("key", list(CREATABLE_FACT_KEYS))
@@ -245,9 +262,14 @@ def test_owner_can_create_every_registered_key(key):
     assert can_create_fact("owner", key)
 
 
-@pytest.mark.parametrize("key", list(CREATABLE_FACT_KEYS))
-def test_member_cannot_create_any_registered_key(key):
+@pytest.mark.parametrize("key", list(CREATABLE_FACT_KEYS - MEMBER_CREATABLE_FACT_KEYS))
+def test_member_cannot_create_owner_only_keys(key):
     assert not can_create_fact("member", key)
+
+
+@pytest.mark.parametrize("key", list(MEMBER_CREATABLE_FACT_KEYS))
+def test_member_can_create_passive_income_keys(key):
+    assert can_create_fact("member", key)
 
 
 def test_unknown_key_is_rejected_even_for_owner():

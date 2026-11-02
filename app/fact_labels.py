@@ -15,6 +15,14 @@ from __future__ import annotations
 # Stage 1's two creatable keys. An unknown key (anything not in here, e.g.
 # a legacy.* passthrough key) falls back to the raw key — see label_for().
 FACT_LABELS: dict[str, str] = {
+    # Passive income (Stage 2 Step 2) — after tax, what lands in your
+    # account, monthly, joint. Interest and dividends are NOT here — they
+    # reuse the existing income.*.savings_interest / income.*.dividends
+    # facts below, never entered twice.
+    "income.passive.rental": "Rental income — after tax, what lands in your account",
+    "income.passive.business": "Business income — after tax, what lands in your account",
+    "income.passive.investments": "Investment income — after tax, what lands in your account",
+
     # Income
     "income.shannon.paye_salary": "Shannon's PAYE salary",
     "income.shannon.self_employed_profit": "Shannon's self-employed profit",
@@ -83,6 +91,7 @@ FACT_LABELS: dict[str, str] = {
 # Fact.category -> Numbers-page group heading. Any category not listed
 # (including "profile", and anything unanticipated) falls back to "Other".
 CATEGORY_GROUPS: dict[str, str] = {
+    "passive_income": "Passive income — after tax, what lands in your account",
     "income": "Income",
     "spending": "Spending",
     "balance": "Savings and investments",
@@ -96,7 +105,8 @@ DEFAULT_GROUP = "Other"
 # Display order for the groups on the page — fixed, not alphabetical, so
 # the most load-bearing numbers (income, spending) surface first.
 GROUP_ORDER = (
-    "Income", "Spending", "Savings and investments", "Pensions",
+    "Income", "Passive income — after tax, what lands in your account",
+    "Spending", "Savings and investments", "Pensions",
     "Property", "Goals", "Other",
 )
 

@@ -4,6 +4,7 @@ responsive card-grid layout. Needs a real Postgres (skips without
 TEST_DATABASE_URL), same as the other route tests.
 """
 import os
+import re
 
 from app.store import PostgresFactStore
 from app.vendor_path import ensure_on_path
@@ -89,3 +90,69 @@ def test_app_css_defines_the_responsive_grid_breakpoints():
     assert "grid-template-columns" in css
     assert "@media (min-width: 700px)" in css
     assert "overflow-x: hidden" in css  # no horizontal scroll guard
+
+
+# ── Stage 2 Step 2: three new passive income boxes ─────────────────────────
+
+PASSIVE_INCOME_KEYS = ("income.passive.rental", "income.passive.business", "income.passive.investments")
+
+
+def _csrf_token(client):
+    page = client.get("/")
+    return re.search(r'name="csrf_token" value="([^"]+)"', page.data.decode()).group(1)
+
+
+def test_passive_income_section_heading_says_after_tax_what_lands_in_account(client, pg_conn, owner_user_id):
+    store = PostgresFactStore(pg_conn)
+    store.set(Fact.create("income.passive.rental", 500, Unit.GBP_PER_MONTH, Source.USER_STATED, "passive_income"),
+               owner="joint", entered_by_user_id=owner_user_id)
+    login(client, owner_user_id)
+    body = client.get("/").data.decode()
+    assert "after tax" in body.lower() and "what lands in your account" in body.lower()
+
+
+def test_member_can_create_all_three_passive_income_boxes(client, pg_conn, member_user_id):
+    """Asha can create/update all three (Shannon, 2 Nov 2026) — unlike every
+    other creatable key, which is owner-only to create."""
+    from app.store import PostgresFactStore
+
+    login(client, member_user_id)
+    token = _csrf_token(client)
+    for key in PASSIVE_INCOME_KEYS:
+        resp = client.post(f"/facts/{key}/update", data={"value": "300", "csrf_token": token})
+        assert resp.status_code == 303, f"{key}: expected redirect, got {resp.status_code}"
+    store = PostgresFactStore(pg_conn)
+    for key in PASSIVE_INCOME_KEYS:
+        assert store.get(key).value == 300
+
+
+def test_member_can_update_all_three_after_creation(client, pg_conn, owner_user_id, member_user_id):
+    from app.store import PostgresFactStore
+
+    store = PostgresFactStore(pg_conn)
+    for key in PASSIVE_INCOME_KEYS:
+        store.set(Fact.create(key, 300, Unit.GBP_PER_MONTH, Source.USER_STATED, "passive_income"),
+                   owner="joint", entered_by_user_id=owner_user_id)
+
+    login(client, member_user_id)
+    token = _csrf_token(client)
+    for key in PASSIVE_INCOME_KEYS:
+        resp = client.post(f"/facts/{key}/update", data={"value": "450", "csrf_token": token})
+        assert resp.status_code == 303
+    for key in PASSIVE_INCOME_KEYS:
+        assert store.get(key).value == 450
+
+
+def test_member_sees_not_yet_set_cards_for_passive_income_boxes(client, pg_conn, member_user_id):
+    """The 'not yet set' section was previously owner-only, full stop — now
+    it must also show a member any key SHE specifically can create."""
+    login(client, member_user_id)
+    body = client.get("/").data.decode()
+    for key in PASSIVE_INCOME_KEYS:
+        assert key in body
+
+
+def test_member_still_does_not_see_owner_only_not_yet_set_cards(client, pg_conn, member_user_id):
+    login(client, member_user_id)
+    body = client.get("/").data.decode()
+    assert "savings.house_deposit.balance" not in body
