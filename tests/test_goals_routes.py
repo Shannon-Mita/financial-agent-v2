@@ -480,6 +480,7 @@ def test_goals_list_renders_fire_breakdown_and_feasibility(client, pg_conn, owne
         ("cashflow.monthly_lifestyle", 800, Unit.GBP_PER_MONTH, "spending"),
         ("cashflow.monthly_childcare", 600, Unit.GBP_PER_MONTH, "spending"),
         ("cashflow.monthly_other", 200, Unit.GBP_PER_MONTH, "spending"),
+        ("children.0.child_benefit_claiming", True, Unit.BOOL, "profile"),
         ("savings.house_deposit.balance", 22000, Unit.GBP, "balance"),
         ("isa.shannon.cash.value", 5000, Unit.GBP, "balance"),
         ("isa.shannon.stocks_shares.value", 40000, Unit.GBP, "balance"),
@@ -530,6 +531,7 @@ def test_feasibility_card_renders_straight_line_caveat(client, pg_conn, owner_us
         ("cashflow.monthly_lifestyle", 800, Unit.GBP_PER_MONTH, "spending"),
         ("cashflow.monthly_childcare", 600, Unit.GBP_PER_MONTH, "spending"),
         ("cashflow.monthly_other", 200, Unit.GBP_PER_MONTH, "spending"),
+        ("children.0.child_benefit_claiming", True, Unit.BOOL, "profile"),
         ("savings.house_deposit.balance", 22000, Unit.GBP, "balance"),
     ]:
         store.set(Fact.create(key, val, unit, Source.USER_STATED, cat), owner="joint", entered_by_user_id=owner_user_id)

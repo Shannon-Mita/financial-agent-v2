@@ -231,11 +231,12 @@ def test_owner_can_write_every_goals_key_over_http_even_when_owner_is_joint(
 # ── Stage 1: create-if-missing fact registry ───────────────────────────────
 
 def test_creatable_fact_keys_is_exactly_the_approved_registry():
-    """Pins the registry to the two keys Shannon approved — fails loudly if
-    a key is added or removed without an explicit decision."""
+    """Pins the registry to the keys Shannon approved — fails loudly if a
+    key is added or removed without an explicit decision."""
     assert CREATABLE_FACT_KEYS == frozenset({
         "goals.fire.target_date",
         "savings.house_deposit.balance",
+        "children.0.funded_childcare_30hrs_claiming",
     })
 
 

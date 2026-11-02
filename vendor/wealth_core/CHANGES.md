@@ -26,6 +26,82 @@
   Reported per Shannon's request while building Stage 1's feasibility check;
   not changed.
 
+## 2026-11-02
+
+### FIX: `calc_child_benefit`/`calc_monthly_surplus`/`build_recap` had no way to exclude Child Benefit for a household that doesn't receive it
+
+financial-agent-v2's household does not receive Child Benefit (Shannon,
+1 Nov 2026), so the surplus calculation's inclusion of a Child Benefit term
+was wrong for this household's real facts, not merely unconfirmed. The
+engine had no parameter to express "household has children but doesn't
+claim" — only `num_children`, which also drives every other
+children-dependent calculation and must not be falsified to zero out CB.
+
+Added a `claiming: bool = True` parameter to `calc_child_benefit()`
+(short-circuits to the same zero `ChildBenefitResult` already used for
+`num_children<=0`), threaded through `calc_monthly_surplus()` and
+`build_recap()`. Default `True` preserves every existing caller/test
+unchanged. financial-agent-v2's `app/goal_progress.py` now reads the
+household's own `children.0.child_benefit_claiming` fact and passes it
+through, rather than forcing `num_children=0`.
+
+Note: this does not fix the known partner-only-income HICBC assessment bug
+above — it sidesteps it for this household only, since a household not
+claiming Child Benefit never reaches the HICBC calculation at all.
+
+Failing tests added first (then fixed): `test_cb_not_claiming_zeroes_benefit_even_with_real_children`
+(`tax_engine/tests/test_engine.py`), `test_calc_monthly_surplus_not_claiming_has_no_cb_term_even_with_children`
+and `test_child_benefit_clawback_not_surfaced_when_not_claiming` (`recap/tests/test_recap.py`).
+
+### FIX: `build_recap()` silently defaulted the FIRE target to £4.5M and 10 years when the facts were missing
+
+`fire_target = _n(fv("goals", "fire", "target_number")) or 4500000` and
+`target_years = _n(fv("goals", "fire", "target_years")) or 10` meant a
+household with no FIRE facts set up yet (or a genuinely different target)
+was silently measured against numbers that were never theirs. Both keys
+added to `REQUIRED_KEYS`; the freshness gate now refuses and names the
+missing fact, exactly like every other required input. No behaviour change
+for a household that already has both facts set — confirmed by seeding the
+test suite's `seed()`/`_fresh_store()` helpers with the same values
+(4,500,000 / 10) the code used to default to, so every pre-existing golden
+number is unchanged.
+
+Failing tests added first (then fixed): `test_missing_fire_target_blocks_not_silently_defaulted_to_4_5m`,
+`test_missing_fire_target_years_blocks_not_silently_defaulted_to_10` (`recap/tests/test_recap.py`).
+
+### ADD: 2027/28, 2028/29, 2029/30, 2030/31 `TaxYear` entries
+
+Added now, not deferred (Shannon, 1 Nov 2026) — financial-agent-v2's goals
+run to 5 Oct 2030, spanning all four. Verified against GOV.UK, fetched
+2026-11-02: Personal Allowance, basic rate limit, higher/additional rate
+threshold, rates, and NI primary threshold/upper earnings limit/rates are
+frozen unchanged from 2026/27 across all four years (GOV.UK OOTLAR, Budget
+2025, updated 5 Dec 2025 — see `tax_engine/facts.py` for exact citations).
+Everything else, including the Child Benefit/HICBC fields even though this
+household no longer uses them, is `NotVerified` — never carried forward
+unverified just because a field happens to be unused.
+
+### ADD: `tax_engine/childcare_policy.py` — 30-hours funded childcare eligibility constants
+
+Not tax-year scoped — a standing GOV.UK eligibility rule, not an annual
+Budget parameter. Per-parent (not household-combined) adjusted net income
+cap £100,000 and per-parent minimum earnings. Verified against GOV.UK,
+fetched 2026-11-02: https://www.gov.uk/30-hours-free-childcare
+
+### ADD: `tax_engine/inflation.py` — OBR CPI forecast + `deflate_to_today_money()`
+
+Both of financial-agent-v2's goal targets are in 2030 money; this deflates
+them to today's money for comparison against today's-money entered figures
+(never the reverse — projecting entered figures forward would be a growth
+projection, out of scope for the maths-only feasibility layer). Calendar-year
+CPI forecast verified against the OBR, fetched 2026-11-02: October 2026
+Economic and Fiscal Outlook (published 28 Oct 2026), detailed forecast
+tables: economy, Table 1.7 Inflation — 2026: 3.11%, 2027: 3.42%, 2028:
+2.10%, 2029: 2.10%, 2030: 2.01%.
+
+Full suite re-run after this batch (real Postgres, not the skip-without-
+`TEST_DATABASE_URL` path): see financial-agent-v2's own report for totals.
+
 ## 2026-10-29
 
 ### FIX: higher-rate band shrank when Gift Aid was present, overstating tax above ~£112,570 with a donation

@@ -102,6 +102,7 @@ SURPLUS_REQUIRED_KEYS = (
     "cashflow.monthly_lifestyle",
     "cashflow.monthly_childcare",
     "cashflow.monthly_other",
+    "children.0.child_benefit_claiming",
 )
 
 PAYE_ONLY_CAVEAT = (
@@ -193,10 +194,11 @@ def feasibility_for_goal(goal: dict, facts: dict, *, on: date | None = None,
     childcare = _n(facts["cashflow.monthly_childcare"].value)
     other = _n(facts["cashflow.monthly_other"].value)
 
+    claiming_cb = bool(facts["children.0.child_benefit_claiming"].value)
     surplus = calc_monthly_surplus(
         s_salary, p_salary, s_pension, p_pension,
         essentials, lifestyle, childcare, other,
-        tax_year=tax_year, num_children=_num_children(facts),
+        tax_year=tax_year, num_children=_num_children(facts), claiming=claiming_cb,
     )
 
     stale = tuple((s.key, s.age_days, s.max_age_days) for s in fresh.stale)

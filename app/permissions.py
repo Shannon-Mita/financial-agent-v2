@@ -56,6 +56,7 @@ def can_write_fact(role: str, fact_owner: str, key: str) -> bool:
 CREATABLE_FACT_KEYS = frozenset({
     "goals.fire.target_date",
     "savings.house_deposit.balance",
+    "children.0.funded_childcare_30hrs_claiming",
 })
 
 

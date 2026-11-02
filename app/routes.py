@@ -45,6 +45,7 @@ bp = Blueprint("routes", __name__)
 CREATABLE_FACT_SPECS = {
     "goals.fire.target_date": (Unit.DATE, "goal", "joint"),
     "savings.house_deposit.balance": (Unit.GBP, "balance", "joint"),
+    "children.0.funded_childcare_30hrs_claiming": (Unit.BOOL, "profile", "joint"),
 }
 
 

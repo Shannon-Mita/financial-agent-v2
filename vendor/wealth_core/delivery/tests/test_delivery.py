@@ -24,6 +24,8 @@ def _fresh_store(partner=110000):
         ("cashflow.monthly_lifestyle", 1000, Unit.GBP_PER_MONTH, "spending"),
         ("cashflow.monthly_childcare", 0, Unit.GBP_PER_MONTH, "spending"),
         ("cashflow.monthly_other", 300, Unit.GBP_PER_MONTH, "spending"),
+        ("goals.fire.target_number", 4500000, Unit.GBP, "goal"),
+        ("goals.fire.target_years", 10, Unit.COUNT, "goal"),
     ]:
         s.set(Fact.create(key, val, unit, Source.USER_STATED, cat, as_of=a))
     return s

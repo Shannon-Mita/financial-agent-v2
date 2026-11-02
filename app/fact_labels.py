@@ -74,6 +74,7 @@ FACT_LABELS: dict[str, str] = {
 
     # Other (profile — not income/spending/savings/pensions/property/goals)
     "children.0.child_benefit_claiming": "Child 1 — claiming Child Benefit",
+    "children.0.funded_childcare_30hrs_claiming": "Child 1 — claiming 30 hours funded childcare",
     "children.0.dob": "Child 1's date of birth",
     "people.shannon.dob": "Shannon's date of birth",
     "people.partner.dob": "Partner's date of birth",

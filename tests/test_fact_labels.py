@@ -46,6 +46,7 @@ def test_group_order_contains_every_mapped_group_plus_other():
 def test_stage1_creatable_keys_have_labels():
     assert "goals.fire.target_date" in FACT_LABELS
     assert "savings.house_deposit.balance" in FACT_LABELS
+    assert "children.0.funded_childcare_30hrs_claiming" in FACT_LABELS
 
 
 def test_every_curated_migration_key_has_a_friendly_label():

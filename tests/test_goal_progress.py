@@ -5,6 +5,8 @@ store.current(); these functions never touch the database themselves.
 """
 from datetime import date, timedelta
 
+import pytest
+
 from app.goal_progress import fire_accessible_breakdown, feasibility_for_goal
 from app.vendor_path import ensure_on_path
 
@@ -94,6 +96,7 @@ def base_facts(**overrides):
         "cashflow.monthly_childcare": fact("cashflow.monthly_childcare", 600, Unit.GBP_PER_MONTH, "spending"),
         "cashflow.monthly_other": fact("cashflow.monthly_other", 200, Unit.GBP_PER_MONTH, "spending"),
         "children.0.dob": fact("children.0.dob", "2020-01-01", Unit.DATE, "profile"),
+        "children.0.child_benefit_claiming": fact("children.0.child_benefit_claiming", True, Unit.BOOL, "profile"),
         "savings.house_deposit.balance": fact("savings.house_deposit.balance", 22000, Unit.GBP, "balance"),
     }
     facts.update(overrides)
@@ -237,3 +240,50 @@ def _whole_months(start, end):
     if end.day < start.day:
         months -= 1
     return months
+
+
+# ── Child Benefit fix (FIX, 2 Nov 2026): this household doesn't receive
+# Child Benefit — surplus must exclude it, driven by the existing
+# children.0.child_benefit_claiming fact, not by pretending num_children=0
+# (the household still has a real child for every other calculation). ──────
+
+def test_not_claiming_child_benefit_lowers_surplus_vs_claiming():
+    claiming_facts = base_facts()
+    not_claiming_facts = base_facts(**{
+        "children.0.child_benefit_claiming": fact(
+            "children.0.child_benefit_claiming", False, Unit.BOOL, "profile"
+        ),
+    })
+    f_claiming = feasibility_for_goal(DEPOSIT_GOAL, claiming_facts, on=TODAY, tax_year="2026/27")
+    f_not_claiming = feasibility_for_goal(DEPOSIT_GOAL, not_claiming_facts, on=TODAY, tax_year="2026/27")
+    assert f_not_claiming.surplus < f_claiming.surplus
+
+
+def test_not_claiming_child_benefit_matches_engine_directly():
+    """The excluded amount must match calc_monthly_surplus(claiming=False)
+    exactly — not an approximation."""
+    from app.vendor_path import ensure_on_path
+    ensure_on_path()
+    from recap import calc_monthly_surplus
+
+    facts = base_facts(**{
+        "children.0.child_benefit_claiming": fact(
+            "children.0.child_benefit_claiming", False, Unit.BOOL, "profile"
+        ),
+    })
+    f = feasibility_for_goal(DEPOSIT_GOAL, facts, on=TODAY, tax_year="2026/27")
+    expected = calc_monthly_surplus(
+        55000, 70000, 0, 0, 2000, 800, 600, 200,
+        tax_year="2026/27", num_children=1, claiming=False,
+    )
+    assert f.surplus == pytest.approx(expected)
+
+
+def test_refuses_when_child_benefit_claiming_fact_missing():
+    """Required now, like every other surplus input — missing it must
+    refuse, never silently assume either way."""
+    facts = base_facts()
+    del facts["children.0.child_benefit_claiming"]
+    f = feasibility_for_goal(DEPOSIT_GOAL, facts, on=TODAY, tax_year="2026/27")
+    assert f.refused is True
+    assert "children.0.child_benefit_claiming" in f.missing_keys

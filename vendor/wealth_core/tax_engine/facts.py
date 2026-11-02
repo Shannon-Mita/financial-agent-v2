@@ -222,9 +222,202 @@ _2026_27 = TaxYear(
 )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 2027/28, 2028/29, 2029/30, 2030/31 (Shannon, 1 Nov 2026: added now, not
+# deferred — the household's goals run to 5 Oct 2030, spanning all four.)
+#
+# Verified against GOV.UK, fetched 2026-11-02 (England). Income Tax Personal
+# Allowance, basic rate limit, higher/additional rate threshold, rates, and
+# NI primary threshold/upper earnings limit/rates are all frozen unchanged
+# from 2026/27 across all four years:
+#   https://www.gov.uk/income-tax-rates
+#   https://www.gov.uk/national-insurance/how-much-you-pay
+#   https://www.gov.uk/government/publications/budget-2025-overview-of-tax-legislation-and-rates-ootlar/budget-2025-overview-of-tax-legislation-and-rates-ootlar
+#     (Budget 2025 OOTLAR, updated 5 Dec 2025): "the Personal Allowance at
+#     £12,570 and basic rate limit at £37,700 for the 2028 to 2029 to 2030
+#     to 2031 tax years"; NICs Primary Threshold/Lower Profits Limit
+#     maintained at £12,570 and Upper Earnings Limit/Upper Profits Limit at
+#     £50,270 "from April 2028 until April 2031". 2027/28 sits inside the
+#     freeze already in force before this three-year extension.
+#
+# Everything below that line is NOT verified for any of these four years
+# (CGT, dividend/savings allowances, ISA/JISA, pension annual allowance,
+# trading allowance, IHT, SDLT surcharge) — each a NotVerified placeholder,
+# not copied from 2026/27.
+#
+# Child Benefit/HICBC fields are ALSO NotVerified for all four years, even
+# though this household no longer claims Child Benefit (Shannon, 1 Nov 2026
+# — see financial-agent-v2's app/goal_progress.py `claiming` fix): never
+# carry forward an unverified figure just because it happens to be unused.
+# ─────────────────────────────────────────────────────────────────────────────
+_2027_28 = TaxYear(
+    year="2027/28",
+    tax_year_end="2028-04-05",
+    personal_allowance=12570,
+    basic_rate_limit=50270,
+    higher_rate_limit=125140,
+    taper_start=100000,
+    basic_rate=0.20,
+    higher_rate=0.40,
+    additional_rate=0.45,
+    ni_primary_threshold=12570,
+    ni_upper_earnings=50270,
+    ni_main_rate=0.08,
+    ni_upper_rate=0.02,
+    savings_allowance_basic=NotVerified("2027/28", "savings_allowance_basic"),
+    savings_allowance_higher=NotVerified("2027/28", "savings_allowance_higher"),
+    dividend_allowance=NotVerified("2027/28", "dividend_allowance"),
+    cgt_exemption=NotVerified("2027/28", "cgt_exemption"),
+    isa_allowance=NotVerified("2027/28", "isa_allowance"),
+    jisa_allowance=NotVerified("2027/28", "jisa_allowance"),
+    pension_annual_allowance=NotVerified("2027/28", "pension_annual_allowance"),
+    trading_allowance=NotVerified("2027/28", "trading_allowance"),
+    cgt_basic_rate_property=NotVerified("2027/28", "cgt_basic_rate_property"),
+    cgt_higher_rate_property=NotVerified("2027/28", "cgt_higher_rate_property"),
+    cb_weekly_first_child=NotVerified("2027/28", "cb_weekly_first_child"),
+    cb_weekly_additional_child=NotVerified("2027/28", "cb_weekly_additional_child"),
+    hicbc_taper_start=NotVerified("2027/28", "hicbc_taper_start"),
+    hicbc_taper_end=NotVerified("2027/28", "hicbc_taper_end"),
+    iht_nil_rate_band=NotVerified("2027/28", "iht_nil_rate_band"),
+    iht_residence_nil_rate_band=NotVerified("2027/28", "iht_residence_nil_rate_band"),
+    iht_rate=NotVerified("2027/28", "iht_rate"),
+    iht_annual_gift_exemption=NotVerified("2027/28", "iht_annual_gift_exemption"),
+    sdlt_additional_surcharge=NotVerified("2027/28", "sdlt_additional_surcharge"),
+    sources=(
+        "https://www.gov.uk/income-tax-rates",
+        "https://www.gov.uk/national-insurance/how-much-you-pay",
+        "https://www.gov.uk/government/publications/budget-2025-overview-of-tax-legislation-and-rates-ootlar/budget-2025-overview-of-tax-legislation-and-rates-ootlar",
+    ),
+)
+
+_2028_29 = TaxYear(
+    year="2028/29",
+    tax_year_end="2029-04-05",
+    personal_allowance=12570,
+    basic_rate_limit=50270,
+    higher_rate_limit=125140,
+    taper_start=100000,
+    basic_rate=0.20,
+    higher_rate=0.40,
+    additional_rate=0.45,
+    ni_primary_threshold=12570,
+    ni_upper_earnings=50270,
+    ni_main_rate=0.08,
+    ni_upper_rate=0.02,
+    savings_allowance_basic=NotVerified("2028/29", "savings_allowance_basic"),
+    savings_allowance_higher=NotVerified("2028/29", "savings_allowance_higher"),
+    dividend_allowance=NotVerified("2028/29", "dividend_allowance"),
+    cgt_exemption=NotVerified("2028/29", "cgt_exemption"),
+    isa_allowance=NotVerified("2028/29", "isa_allowance"),
+    jisa_allowance=NotVerified("2028/29", "jisa_allowance"),
+    pension_annual_allowance=NotVerified("2028/29", "pension_annual_allowance"),
+    trading_allowance=NotVerified("2028/29", "trading_allowance"),
+    cgt_basic_rate_property=NotVerified("2028/29", "cgt_basic_rate_property"),
+    cgt_higher_rate_property=NotVerified("2028/29", "cgt_higher_rate_property"),
+    cb_weekly_first_child=NotVerified("2028/29", "cb_weekly_first_child"),
+    cb_weekly_additional_child=NotVerified("2028/29", "cb_weekly_additional_child"),
+    hicbc_taper_start=NotVerified("2028/29", "hicbc_taper_start"),
+    hicbc_taper_end=NotVerified("2028/29", "hicbc_taper_end"),
+    iht_nil_rate_band=NotVerified("2028/29", "iht_nil_rate_band"),
+    iht_residence_nil_rate_band=NotVerified("2028/29", "iht_residence_nil_rate_band"),
+    iht_rate=NotVerified("2028/29", "iht_rate"),
+    iht_annual_gift_exemption=NotVerified("2028/29", "iht_annual_gift_exemption"),
+    sdlt_additional_surcharge=NotVerified("2028/29", "sdlt_additional_surcharge"),
+    sources=(
+        "https://www.gov.uk/income-tax-rates",
+        "https://www.gov.uk/national-insurance/how-much-you-pay",
+        "https://www.gov.uk/government/publications/budget-2025-overview-of-tax-legislation-and-rates-ootlar/budget-2025-overview-of-tax-legislation-and-rates-ootlar",
+    ),
+)
+
+_2029_30 = TaxYear(
+    year="2029/30",
+    tax_year_end="2030-04-05",
+    personal_allowance=12570,
+    basic_rate_limit=50270,
+    higher_rate_limit=125140,
+    taper_start=100000,
+    basic_rate=0.20,
+    higher_rate=0.40,
+    additional_rate=0.45,
+    ni_primary_threshold=12570,
+    ni_upper_earnings=50270,
+    ni_main_rate=0.08,
+    ni_upper_rate=0.02,
+    savings_allowance_basic=NotVerified("2029/30", "savings_allowance_basic"),
+    savings_allowance_higher=NotVerified("2029/30", "savings_allowance_higher"),
+    dividend_allowance=NotVerified("2029/30", "dividend_allowance"),
+    cgt_exemption=NotVerified("2029/30", "cgt_exemption"),
+    isa_allowance=NotVerified("2029/30", "isa_allowance"),
+    jisa_allowance=NotVerified("2029/30", "jisa_allowance"),
+    pension_annual_allowance=NotVerified("2029/30", "pension_annual_allowance"),
+    trading_allowance=NotVerified("2029/30", "trading_allowance"),
+    cgt_basic_rate_property=NotVerified("2029/30", "cgt_basic_rate_property"),
+    cgt_higher_rate_property=NotVerified("2029/30", "cgt_higher_rate_property"),
+    cb_weekly_first_child=NotVerified("2029/30", "cb_weekly_first_child"),
+    cb_weekly_additional_child=NotVerified("2029/30", "cb_weekly_additional_child"),
+    hicbc_taper_start=NotVerified("2029/30", "hicbc_taper_start"),
+    hicbc_taper_end=NotVerified("2029/30", "hicbc_taper_end"),
+    iht_nil_rate_band=NotVerified("2029/30", "iht_nil_rate_band"),
+    iht_residence_nil_rate_band=NotVerified("2029/30", "iht_residence_nil_rate_band"),
+    iht_rate=NotVerified("2029/30", "iht_rate"),
+    iht_annual_gift_exemption=NotVerified("2029/30", "iht_annual_gift_exemption"),
+    sdlt_additional_surcharge=NotVerified("2029/30", "sdlt_additional_surcharge"),
+    sources=(
+        "https://www.gov.uk/income-tax-rates",
+        "https://www.gov.uk/national-insurance/how-much-you-pay",
+        "https://www.gov.uk/government/publications/budget-2025-overview-of-tax-legislation-and-rates-ootlar/budget-2025-overview-of-tax-legislation-and-rates-ootlar",
+    ),
+)
+
+_2030_31 = TaxYear(
+    year="2030/31",
+    tax_year_end="2031-04-05",
+    personal_allowance=12570,
+    basic_rate_limit=50270,
+    higher_rate_limit=125140,
+    taper_start=100000,
+    basic_rate=0.20,
+    higher_rate=0.40,
+    additional_rate=0.45,
+    ni_primary_threshold=12570,
+    ni_upper_earnings=50270,
+    ni_main_rate=0.08,
+    ni_upper_rate=0.02,
+    savings_allowance_basic=NotVerified("2030/31", "savings_allowance_basic"),
+    savings_allowance_higher=NotVerified("2030/31", "savings_allowance_higher"),
+    dividend_allowance=NotVerified("2030/31", "dividend_allowance"),
+    cgt_exemption=NotVerified("2030/31", "cgt_exemption"),
+    isa_allowance=NotVerified("2030/31", "isa_allowance"),
+    jisa_allowance=NotVerified("2030/31", "jisa_allowance"),
+    pension_annual_allowance=NotVerified("2030/31", "pension_annual_allowance"),
+    trading_allowance=NotVerified("2030/31", "trading_allowance"),
+    cgt_basic_rate_property=NotVerified("2030/31", "cgt_basic_rate_property"),
+    cgt_higher_rate_property=NotVerified("2030/31", "cgt_higher_rate_property"),
+    cb_weekly_first_child=NotVerified("2030/31", "cb_weekly_first_child"),
+    cb_weekly_additional_child=NotVerified("2030/31", "cb_weekly_additional_child"),
+    hicbc_taper_start=NotVerified("2030/31", "hicbc_taper_start"),
+    hicbc_taper_end=NotVerified("2030/31", "hicbc_taper_end"),
+    iht_nil_rate_band=NotVerified("2030/31", "iht_nil_rate_band"),
+    iht_residence_nil_rate_band=NotVerified("2030/31", "iht_residence_nil_rate_band"),
+    iht_rate=NotVerified("2030/31", "iht_rate"),
+    iht_annual_gift_exemption=NotVerified("2030/31", "iht_annual_gift_exemption"),
+    sdlt_additional_surcharge=NotVerified("2030/31", "sdlt_additional_surcharge"),
+    sources=(
+        "https://www.gov.uk/income-tax-rates",
+        "https://www.gov.uk/national-insurance/how-much-you-pay",
+        "https://www.gov.uk/government/publications/budget-2025-overview-of-tax-legislation-and-rates-ootlar/budget-2025-overview-of-tax-legislation-and-rates-ootlar",
+    ),
+)
+
+
 TAX_YEARS = {
     "2025/26": _2025_26,
     "2026/27": _2026_27,
+    "2027/28": _2027_28,
+    "2028/29": _2028_29,
+    "2029/30": _2029_30,
+    "2030/31": _2030_31,
 }
 
 DEFAULT_TAX_YEAR = "2026/27"

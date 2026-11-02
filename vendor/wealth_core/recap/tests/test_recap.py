@@ -11,8 +11,16 @@ from recap import build_recap, calc_monthly_surplus
 
 
 def seed(store, salary_partner=100000, as_of=None, extras=None,
-         essentials=3000, lifestyle=1000, childcare=0, other=300):
-    """Seed the minimum required facts (fresh by default)."""
+         essentials=3000, lifestyle=1000, childcare=0, other=300,
+         include_fire_facts=True):
+    """Seed the minimum required facts (fresh by default).
+
+    `include_fire_facts=True` by default seeds the exact same values
+    (target_number=4500000, target_years=10) that build_recap() used to
+    silently default to when they were missing — so every pre-existing
+    test's golden numbers are unaffected by the FIX that makes them
+    required facts instead of silent defaults. Pass False to exercise the
+    refusal behaviour itself."""
     a = as_of or date.today()
     base = [
         ("income.shannon.paye_salary", 55000, Unit.GBP_PER_YEAR, "income"),
@@ -25,6 +33,11 @@ def seed(store, salary_partner=100000, as_of=None, extras=None,
         ("cashflow.monthly_childcare", childcare, Unit.GBP_PER_MONTH, "spending"),
         ("cashflow.monthly_other", other, Unit.GBP_PER_MONTH, "spending"),
     ]
+    if include_fire_facts:
+        base += [
+            ("goals.fire.target_number", 4500000, Unit.GBP, "goal"),
+            ("goals.fire.target_years", 10, Unit.COUNT, "goal"),
+        ]
     for key, val, unit, cat in base:
         store.set(Fact.create(key, val, unit, Source.USER_STATED, cat, as_of=a))
     for key, val, unit, cat in (extras or []):
@@ -89,6 +102,17 @@ def test_child_benefit_restored_by_pension_not_surfaced():
         ("pensions.partner.monthly_employee", 2500, Unit.GBP_PER_MONTH, "pension"),
     ])  # £30k/yr pension -> ANI £60k -> benefit restored
     r = build_recap(store, num_children=1)
+    titles = [it.title for it in r.items]
+    assert not any("Child Benefit" in t for t in titles)
+
+
+def test_child_benefit_clawback_not_surfaced_when_not_claiming():
+    """A household with a child but not claiming Child Benefit must not be
+    told it's losing benefit to the HICBC clawback — there's nothing to claw
+    back from benefit that was never claimed."""
+    store = FactStore()
+    seed(store, salary_partner=100000)   # would fully claw back if claiming
+    r = build_recap(store, num_children=1, claiming=False)
     titles = [it.title for it in r.items]
     assert not any("Child Benefit" in t for t in titles)
 
@@ -215,6 +239,40 @@ def test_missing_spending_fields_block_not_silently_default():
     assert "monthly_essentials" in r.block_reason
 
 
+def test_missing_fire_target_blocks_not_silently_defaulted_to_4_5m():
+    """FIX: build_recap() used to read a missing goals.fire.target_number as
+    `or 4500000` — a household with a different real target (or none set up
+    yet) got silently measured against a number that was never theirs. It
+    must refuse instead, naming the missing fact."""
+    store = FactStore()
+    seed(store, include_fire_facts=False)
+    r = build_recap(store, num_children=1)
+    assert r.blocked is True
+    assert "goals.fire.target_number" in r.block_reason
+
+
+def test_missing_fire_target_years_blocks_not_silently_defaulted_to_10():
+    """Same FIX, for the `or 10` target_years default."""
+    store = FactStore()
+    seed(store, include_fire_facts=False, extras=[
+        ("goals.fire.target_number", 2400000, Unit.GBP, "goal"),
+        # target_years deliberately omitted
+    ])
+    r = build_recap(store, num_children=1)
+    assert r.blocked is True
+    assert "goals.fire.target_years" in r.block_reason
+
+
+def test_healthy_recap_with_fire_facts_present_is_not_blocked():
+    """Positive case for the FIX above — fire facts present (the default),
+    build_recap() proceeds exactly as before."""
+    store = FactStore()
+    seed(store)
+    r = build_recap(store, num_children=1)
+    assert r.blocked is False
+    assert r.fire_progress_pct >= 0
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # calc_monthly_surplus() — extracted out of build_recap() for reuse by
 # financial-agent-v2's goal feasibility check (Stage 1). This is a pure
@@ -265,6 +323,24 @@ def test_calc_monthly_surplus_zero_spend_equals_take_home_plus_cb():
     p_tax = calc_income_tax(90000, tax_year="2026/27")
     cb = calc_child_benefit(1, 90000, tax_year="2026/27")
     assert surplus == pytest.approx((s_tax.take_home + p_tax.take_home + cb.net_received) / 12)
+
+
+def test_calc_monthly_surplus_not_claiming_has_no_cb_term_even_with_children():
+    """`claiming=False` must zero the CB term without touching num_children —
+    the household still has a real child for every other calculation."""
+    claiming = calc_monthly_surplus(55000, 50000, 0, 0, 0, 0, 0, 0,
+                                     tax_year="2026/27", num_children=1, claiming=True)
+    not_claiming = calc_monthly_surplus(55000, 50000, 0, 0, 0, 0, 0, 0,
+                                         tax_year="2026/27", num_children=1, claiming=False)
+    assert not_claiming < claiming
+
+
+def test_calc_monthly_surplus_claiming_defaults_to_true():
+    with_default = calc_monthly_surplus(55000, 50000, 0, 0, 0, 0, 0, 0,
+                                         tax_year="2026/27", num_children=1)
+    explicit_true = calc_monthly_surplus(55000, 50000, 0, 0, 0, 0, 0, 0,
+                                          tax_year="2026/27", num_children=1, claiming=True)
+    assert with_default == explicit_true
 
 
 def test_calc_monthly_surplus_zero_children_has_no_cb_term():

@@ -141,16 +141,23 @@ def calc_child_benefit(
     *,
     tax_year: str,
     pension_contribution: float = 0.0,
+    claiming: bool = True,
 ) -> ChildBenefitResult:
     """Child Benefit entitlement net of the High Income Child Benefit Charge.
 
     HICBC is assessed on the HIGHER earner's adjusted net income. The taper runs
     linearly from hicbc_taper_start to hicbc_taper_end; above the end the charge
     equals the full benefit.
+
+    `claiming` drives whether this household receives Child Benefit at all —
+    independent of `num_children`, which stays the real child count for every
+    OTHER calculation that might need it. A household that simply doesn't
+    claim gets the same zero result as a household with no children, without
+    either household having to lie about how many children it has.
     """
     ty = get_tax_year(tax_year)
     num_children = int(num_children or 0)
-    if num_children <= 0:
+    if num_children <= 0 or not claiming:
         return ChildBenefitResult(0, 0.0, 0.0, 0.0, 0)
 
     weekly = ty.cb_weekly_first_child + ty.cb_weekly_additional_child * (num_children - 1)

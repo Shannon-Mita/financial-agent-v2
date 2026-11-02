@@ -110,6 +110,7 @@ def calc_monthly_surplus(
     *,
     tax_year: str,
     num_children: int = 1,
+    claiming: bool = True,
 ) -> float:
     """Monthly household surplus: both earners' take-home plus net Child
     Benefit, minus the four recorded monthly spending categories. Always
@@ -119,11 +120,15 @@ def calc_monthly_surplus(
     (e.g. financial-agent-v2's goal feasibility check) call this one
     implementation instead of recomputing the same formula independently.
     Pulled out verbatim — no formula change.
+
+    `claiming` passes straight through to calc_child_benefit() — see its
+    docstring. `num_children` is never forced to 0 to exclude Child Benefit;
+    `claiming=False` is the correct lever for that.
     """
     s_tax = calc_income_tax(s_salary, tax_year=tax_year, pension_contribution=s_pension_annual)
     p_tax = calc_income_tax(p_salary, tax_year=tax_year, pension_contribution=p_pension_annual)
     cb = calc_child_benefit(num_children, p_salary, tax_year=tax_year,
-                            pension_contribution=p_pension_annual)
+                            pension_contribution=p_pension_annual, claiming=claiming)
     monthly_take_home = (s_tax.take_home + p_tax.take_home + cb.net_received) / 12
     monthly_spend = monthly_essentials + monthly_lifestyle + monthly_childcare + monthly_other
     return monthly_take_home - monthly_spend
@@ -131,6 +136,13 @@ def calc_monthly_surplus(
 
 # Facts the recap needs to compute a household position. If any are stale/missing
 # the gate blocks and asks for exactly these.
+#
+# goals.fire.target_number and goals.fire.target_years were previously NOT
+# required here — build_recap() read them via fv()'s silent `or 4500000` /
+# `or 10` defaults below, so a household with no FIRE facts set up yet (or a
+# different real target) was silently measured against numbers that were
+# never theirs (FIX, 2 Nov 2026). Required facts now, like everything else
+# the recap depends on.
 REQUIRED_KEYS = [
     "income.shannon.paye_salary",
     "income.partner.paye_salary",
@@ -141,6 +153,8 @@ REQUIRED_KEYS = [
     "cashflow.monthly_lifestyle",
     "cashflow.monthly_childcare",
     "cashflow.monthly_other",
+    "goals.fire.target_number",
+    "goals.fire.target_years",
 ]
 
 
@@ -150,6 +164,7 @@ def build_recap(
     tax_year: str = DEFAULT_TAX_YEAR,
     on: date | None = None,
     num_children: int = 1,
+    claiming: bool = True,
 ) -> Recap:
     ref = on or date.today()
     facts = store.current()
@@ -185,7 +200,10 @@ def build_recap(
     isa = _n(fv("isa", "shannon", "stocks_shares", "value")) + _n(fv("isa", "partner", "stocks_shares", "value"))
     net_worth = equity + cash + isa
 
-    fire_target = _n(fv("goals", "fire", "target_number")) or 4500000
+    # Required facts (REQUIRED_KEYS above) — the freshness gate already
+    # refused if either is missing, so no `or <default>` fallback here (FIX,
+    # 2 Nov 2026: see REQUIRED_KEYS comment).
+    fire_target = _n(fv("goals", "fire", "target_number"))
     fire_progress = min(100, round(net_worth / fire_target * 100)) if fire_target else 0
 
     # Partner's tax position and Child Benefit are also needed directly below
@@ -195,7 +213,7 @@ def build_recap(
     # being independently callable elsewhere without reaching into build_recap.
     p_tax = calc_income_tax(p_salary, tax_year=tax_year, pension_contribution=p_pension)
     cb = calc_child_benefit(num_children, p_salary, tax_year=tax_year,
-                            pension_contribution=p_pension)
+                            pension_contribution=p_pension, claiming=claiming)
 
     # Surplus was previously read from a fact ("cashflow.monthly_surplus") that
     # nothing ever wrote — it silently defaulted to zero. It is now always
@@ -207,11 +225,11 @@ def build_recap(
         _n(fv("cashflow", "monthly_lifestyle")),
         _n(fv("cashflow", "monthly_childcare")),
         _n(fv("cashflow", "monthly_other")),
-        tax_year=tax_year, num_children=num_children,
+        tax_year=tax_year, num_children=num_children, claiming=claiming,
     )
 
     # FIRE track status via the objective projection.
-    target_years = _n(fv("goals", "fire", "target_years")) or 10
+    target_years = _n(fv("goals", "fire", "target_years"))
     objective = Objective(fire_number=fire_target, target_years=target_years)
     projection = project_to_target(net_worth, monthly_surplus, objective)
 

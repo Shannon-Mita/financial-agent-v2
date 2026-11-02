@@ -180,6 +180,22 @@ def test_cb_zero_children():
     assert r.net_received == 0
 
 
+def test_cb_claiming_defaults_to_true_existing_behaviour_unchanged():
+    r = calc_child_benefit(1, 50000, tax_year=TY)
+    assert r.annual_entitlement > 0
+    assert r.net_received == r.annual_entitlement
+
+
+def test_cb_not_claiming_zeroes_benefit_even_with_real_children():
+    """A household not claiming Child Benefit gets none — driven by the
+    `claiming` flag, not by pretending num_children is 0 (the household
+    still has a child for every other purpose)."""
+    r = calc_child_benefit(1, 50000, tax_year=TY, claiming=False)
+    assert r.annual_entitlement == 0
+    assert r.net_received == 0
+    assert r.charge_rate == 0.0
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # IHT — relationship-aware (the unmarried trap)
 # ─────────────────────────────────────────────────────────────────────────────
