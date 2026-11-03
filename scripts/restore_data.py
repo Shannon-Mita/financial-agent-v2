@@ -17,6 +17,7 @@ A successful run prints a row count per table and exits 0:
     Restored goal_assignees: 2 rows
     Restored tasks: 5 rows
     Restored audit_log: 11 rows
+    Restored decision_log: 4 rows
 """
 import json
 import os

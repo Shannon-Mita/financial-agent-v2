@@ -14,7 +14,7 @@ from flask_login import current_user, login_required
 from werkzeug.exceptions import MethodNotAllowed, NotFound
 from werkzeug.routing import RequestRedirect
 
-from . import goals_store, strategies_store, vendor_path  # noqa: F401
+from . import decision_log_store, goals_store, strategies_store, vendor_path  # noqa: F401
 from facts_layer import Fact, Source, Unit, check_freshness
 
 from .db import get_conn
@@ -1044,3 +1044,40 @@ def toggle_task(task_id):
         abort(403)
     goals_store.toggle_task(conn, task_id, not task["done"], int(current_user.id))
     return redirect(_safe_next("routes.goals_list"))
+
+
+# ── Decision log — both can add, nobody can edit or delete ──────────────
+
+def _parse_decision_form(form) -> dict:
+    decision_date = form.get("decision_date")
+    if not decision_date:
+        abort(400, description="Missing decision_date")
+    decision = (form.get("decision") or "").strip()
+    if not decision:
+        abort(400, description="Missing decision")
+    reason = (form.get("reason") or "").strip()
+    if not reason:
+        abort(400, description="Missing reason")
+    assumptions = (form.get("assumptions") or "").strip()
+    return dict(decision_date=decision_date, decision=decision, reason=reason, assumptions=assumptions)
+
+
+@bp.route("/decisions")
+@login_required
+def decisions_list():
+    conn = get_conn()
+    decisions = decision_log_store.list_decisions(conn)
+    users = {u["id"]: u for u in goals_store.list_users(conn)}
+    return render_template(
+        "decisions_list.html", user=current_user, decisions=decisions, users=users,
+        today=date.today().isoformat(),
+    )
+
+
+@bp.route("/decisions", methods=["POST"])
+@login_required
+def create_decision():
+    fields = _parse_decision_form(request.form)
+    conn = get_conn()
+    decision_log_store.create_decision(conn, **fields, user_id=int(current_user.id))
+    return redirect(url_for("routes.decisions_list"))

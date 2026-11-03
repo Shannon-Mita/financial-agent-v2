@@ -37,6 +37,9 @@ just the subtraction. Exported from `recap/__init__.py` alongside
   `.py` file in the repo references `salary_sacrifice`/`salarySacrifice`).
   Reported per Shannon's request while building Stage 1's feasibility check;
   not changed.
+- Child Benefit/HICBC code is unused for this household.
+- Whether the engine reduces National Insurance for employee pension
+  contributions is unverified (only correct under salary sacrifice).
 
 ## 2026-11-02
 

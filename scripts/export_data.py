@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Manual export: dumps the current Postgres contents (every table in the
-schema — users, the full facts history, and Stage 1's goals/goal_assignees/
-tasks/audit_log) to a timestamped JSON file under ./exports/, so Shannon
-always has a way to pull the household's data out of the host without
-relying on the host's own backup tooling. See docs/RUNBOOK.md for when to
-run this and how to restore from the result (scripts/restore_data.py).
+schema — users, the full facts history, Stage 1's goals/goal_assignees/
+tasks/audit_log, and the decision log) to a timestamped JSON file under
+./exports/, so Shannon always has a way to pull the household's data out
+of the host without relying on the host's own backup tooling. See
+docs/RUNBOOK.md for when to run this and how to restore from the result
+(scripts/restore_data.py).
 
 Reads DATABASE_URL from the environment — never prints it or any other env
 var, only the data rows themselves.
@@ -18,6 +19,7 @@ A successful run prints the output path and a row count for each table, e.g.:
     goal_assignees: 2 rows
     tasks: 5 rows
     audit_log: 11 rows
+    decision_log: 4 rows
 and exits 0.
 """
 import json
@@ -27,11 +29,11 @@ from datetime import datetime, timezone
 
 import psycopg2
 
-# Every table in migrations/001_init.sql + 002_goals.sql + 003_strategies.sql,
-# in an order that's safe to restore in (parents before the rows that
-# reference them) — see scripts/restore_data.py. Columns are listed
-# explicitly (not `SELECT *`) so the export's shape is stable even if a
-# column is ever reordered.
+# Every table in migrations/001_init.sql + 002_goals.sql + 003_strategies.sql
+# + 004_decision_log.sql, in an order that's safe to restore in (parents
+# before the rows that reference them) — see scripts/restore_data.py.
+# Columns are listed explicitly (not `SELECT *`) so the export's shape is
+# stable even if a column is ever reordered.
 TABLES = {
     "users": ("id", "google_sub", "email", "role", "created_at"),
     "facts": (
@@ -64,6 +66,10 @@ TABLES = {
     "strategy_steps": (
         "id", "strategy_id", "title", "assignee_user_id", "done", "done_at",
         "done_by_user_id", "created_at", "created_by_user_id",
+    ),
+    "decision_log": (
+        "id", "decision_date", "decision", "reason", "assumptions",
+        "created_at", "created_by_user_id",
     ),
 }
 

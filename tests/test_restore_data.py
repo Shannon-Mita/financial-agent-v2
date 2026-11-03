@@ -21,8 +21,8 @@ def wipe(conn):
     with conn.cursor() as cur:
         cur.execute(
             "TRUNCATE facts, users, goals, goal_assignees, tasks, audit_log, "
-            "strategies, strategy_goal_links, strategy_levers, strategy_steps "
-            "RESTART IDENTITY CASCADE"
+            "strategies, strategy_goal_links, strategy_levers, strategy_steps, "
+            "decision_log RESTART IDENTITY CASCADE"
         )
     conn.commit()
 

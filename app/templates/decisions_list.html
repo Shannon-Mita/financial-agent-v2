@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Decision log{% endblock %}
+{% block content %}
+  <h1>Decision log</h1>
+
+  <div class="card">
+    <div class="card-title">Add a decision</div>
+    <form method="post" action="{{ url_for('routes.create_decision') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="field-label">Date</label>
+      <input type="date" name="decision_date" value="{{ today }}" required>
+      <label class="field-label">Decision</label>
+      <input type="text" name="decision" required>
+      <label class="field-label">Reason</label>
+      <input type="text" name="reason" required>
+      <label class="field-label">Assumptions</label>
+      <input type="text" name="assumptions">
+      <button type="submit">Add decision</button>
+    </form>
+  </div>
+
+  {% for d in decisions %}
+  <div class="card">
+    <div class="card-title">{{ d.decision_date.isoformat() }} — {{ d.decision }}</div>
+    <div class="row"><span class="label">Reason</span><span>{{ d.reason }}</span></div>
+    {% if d.assumptions %}
+    <div class="row"><span class="label">Assumptions</span><span>{{ d.assumptions }}</span></div>
+    {% endif %}
+    <div class="row"><span class="label">Added by</span>
+      <span>{{ users[d.created_by_user_id].email if users.get(d.created_by_user_id) else "?" }}</span></div>
+  </div>
+  {% endfor %}
+  {% if not decisions %}
+  <p class="readonly-note">No decisions logged yet.</p>
+  {% endif %}
+{% endblock %}
