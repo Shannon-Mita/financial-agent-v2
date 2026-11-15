@@ -93,6 +93,7 @@ PAGES = [
     "/",
     "/goals",
     "/confirm-stale",
+    "/tasks",
 ]
 OWNER_ONLY_PAGES = [
     "/goals/{goal_id}",
@@ -247,7 +248,9 @@ def test_goal_next_crafted_to_a_post_only_goal_url_now_falls_back_safely(client,
     "/facts/income.shannon.bonus_expected/update",
     "/goals/1/delete",
     "/goals/1/status",
-    "/tasks",
+    # "/tasks" is intentionally absent — it gained a GET sibling (the
+    # Tasks page, task 1) and is now in test_redirect_target_validation.py's
+    # GET_CAPABLE_PATHS instead, same treatment as "/goals" above.
     "/tasks/1/edit",
     "/tasks/1/delete",
     "/tasks/1/toggle",

@@ -31,6 +31,33 @@ def test_create_and_get_strategy(pg_conn, owner_user_id):
     assert s["effect_on_passive_income"] is None
 
 
+def test_create_strategy_without_last_reviewed_date_defaults_to_none(pg_conn, owner_user_id):
+    # The store itself takes no position on "always today" — that policy
+    # lives in the route (app/routes.py::create_strategy), which always
+    # passes an explicit value. A caller that omits it entirely (e.g. the
+    # one-off seed script) gets NULL, same as every other unknown field.
+    strategy_id = strategies_store.create_strategy(
+        pg_conn, title="No review yet", detail="", area="Business", status="idea",
+        work_lives_in="here", source="shannon",
+        effect_on_net_worth=None, effect_on_passive_income=None,
+        risks_childcare_eligibility="unknown", from_when=None, user_id=owner_user_id,
+    )
+    s = strategies_store.get_strategy(pg_conn, strategy_id)
+    assert s["last_reviewed_date"] is None
+
+
+def test_create_strategy_accepts_an_explicit_last_reviewed_date(pg_conn, owner_user_id):
+    strategy_id = strategies_store.create_strategy(
+        pg_conn, title="Reviewed on creation", detail="", area="Business", status="idea",
+        work_lives_in="here", source="shannon",
+        effect_on_net_worth=None, effect_on_passive_income=None,
+        risks_childcare_eligibility="unknown", from_when=None,
+        last_reviewed_date="2026-11-15", user_id=owner_user_id,
+    )
+    s = strategies_store.get_strategy(pg_conn, strategy_id)
+    assert str(s["last_reviewed_date"]) == "2026-11-15"
+
+
 def test_create_strategy_with_a_genuine_zero_effect(pg_conn, owner_user_id):
     strategy_id = strategies_store.create_strategy(
         pg_conn, title="Mahired / Welfound", detail="Not operating to produce profit.",

@@ -23,7 +23,6 @@ POST_ONLY_PATHS = [
     "/goals",            # POST (create) — but see test below, has a GET too
     "/goals/1/delete",
     "/goals/1/status",
-    "/tasks",
     "/tasks/1/edit",
     "/tasks/1/delete",
     "/tasks/1/toggle",
@@ -38,6 +37,7 @@ GET_CAPABLE_PATHS = [
     "/goals/1",
     "/goals/1/edit",
     "/confirm-stale",
+    "/tasks",  # POST (create) — but also GET (the Tasks page, task 1)
 ]
 
 
@@ -86,4 +86,28 @@ def test_safe_next_allows_a_real_goal_detail_path_via_form(app):
 
 def test_safe_next_falls_back_when_next_is_missing(app):
     with app.test_request_context("/tasks/1/toggle", method="POST", data={}):
+        assert _safe_next("routes.goals_list") == "/goals"
+
+
+# ── /tasks (task 1): allowed as an EXACT match only, not a prefix — unlike
+# "/goals*", there's no /tasks/<id>/... sub-path that should ever be a
+# valid redirect target, so the allowlist stays as narrow as possible ────
+
+def test_safe_next_allows_the_exact_tasks_path(app):
+    with app.test_request_context("/tasks/1/toggle", method="POST", data={"next": "/tasks"}):
+        assert _safe_next("routes.goals_list") == "/tasks"
+
+
+def test_safe_next_allows_the_exact_tasks_path_with_trailing_slash_or_falls_back_safely(app):
+    # "/tasks/" isn't actually a registered route (only "/tasks" is), so
+    # this still falls back — included to document that the exact-match
+    # allowlist entry for it is inert until/unless that changes, not a
+    # trailing-slash bypass.
+    with app.test_request_context("/tasks/1/toggle", method="POST", data={"next": "/tasks/"}):
+        assert _safe_next("routes.goals_list") == "/goals"
+
+
+@pytest.mark.parametrize("path", ["//tasks", "/tasks.evil", "/tasksfoo", "/tasks/1/toggle"])
+def test_safe_next_rejects_tasks_lookalikes_and_post_only_tasks_sub_paths(app, path):
+    with app.test_request_context("/tasks/1/toggle", method="POST", data={"next": path}):
         assert _safe_next("routes.goals_list") == "/goals"

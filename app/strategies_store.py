@@ -44,21 +44,26 @@ def get_strategy(conn, strategy_id: int) -> dict | None:
 
 def create_strategy(conn, *, title, detail, area, status, work_lives_in, source,
                      effect_on_net_worth, effect_on_passive_income,
-                     risks_childcare_eligibility, from_when, user_id) -> int:
+                     risks_childcare_eligibility, from_when, user_id,
+                     last_reviewed_date=None) -> int:
+    """`last_reviewed_date` defaults to NULL like every other unknown
+    field — the "a new strategy is reviewed as of today" policy belongs to
+    the caller (app/routes.py::create_strategy always passes today's date
+    in Europe/London), not to this plain-persistence store function."""
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO strategies
               (title, detail, area, status, work_lives_in, source,
                effect_on_net_worth, effect_on_passive_income,
-               risks_childcare_eligibility, from_when,
+               risks_childcare_eligibility, from_when, last_reviewed_date,
                created_by_user_id, updated_by_user_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (title, detail, area, status, work_lives_in, source,
              effect_on_net_worth, effect_on_passive_income,
-             risks_childcare_eligibility, from_when, user_id, user_id),
+             risks_childcare_eligibility, from_when, last_reviewed_date, user_id, user_id),
         )
         strategy_id = cur.fetchone()[0]
     conn.commit()
@@ -153,6 +158,14 @@ def list_strategy_steps(conn, strategy_id: int) -> list[dict]:
             f"SELECT {', '.join(STEP_COLUMNS)} FROM strategy_steps WHERE strategy_id = %s ORDER BY id",
             (strategy_id,),
         )
+        return [_row_to_dict(r, STEP_COLUMNS) for r in cur.fetchall()]
+
+
+def list_strategy_steps_all(conn) -> list[dict]:
+    """Every step across every strategy — mirrors goals_store.list_tasks(conn)
+    with no goal_id filter, for the Tasks page (app/routes.py::tasks_list)."""
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT {', '.join(STEP_COLUMNS)} FROM strategy_steps ORDER BY id")
         return [_row_to_dict(r, STEP_COLUMNS) for r in cur.fetchall()]
 
 

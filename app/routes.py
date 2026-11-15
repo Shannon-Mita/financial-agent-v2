@@ -47,7 +47,7 @@ from .permissions import (
     owner_required,
 )
 from .store import PostgresFactStore
-from .strategy_review import is_strategy_stale
+from .strategy_review import is_strategy_stale, today_in_london
 
 STRATEGY_AREAS = ("Work and income", "Relocation", "Business", "Investing", "Property", "Spending")
 
@@ -125,13 +125,17 @@ def _get_allowed(path: str) -> bool:
 
 def _safe_next(default_endpoint, **default_kwargs):
     """Redirect target for goal/task POSTs — only ever one of our own
-    /goals* paths (rendered by our own templates' hidden `next` field), not
-    arbitrary client input, so no open-redirect risk — AND the matched
-    route must actually accept GET, or a browser following this redirect
-    would 405 (e.g. a crafted next of /goals/<id>/delete or /goals/<id>/status,
-    both POST-only but '/goals'-prefixed)."""
+    /goals* paths, or the Tasks page itself (rendered by our own templates'
+    hidden `next` field), not arbitrary client input, so no open-redirect
+    risk — AND the matched route must actually accept GET, or a browser
+    following this redirect would 405 (e.g. a crafted next of
+    /goals/<id>/delete or /goals/<id>/status, both POST-only but
+    '/goals'-prefixed). "/tasks" is allowed as an EXACT match only, not a
+    prefix — unlike /goals*, no /tasks/<id>/... sub-path should ever be a
+    valid redirect target, so this stays as narrow as the Tasks page
+    actually needs (task 1, Shannon 15 Nov 2026)."""
     nxt = request.form.get("next")
-    if nxt and nxt.startswith("/goals"):
+    if nxt and (nxt.startswith("/goals") or nxt in ("/tasks", "/tasks/")):
         path_only = nxt.split("#", 1)[0].split("?", 1)[0]
         if _get_allowed(path_only):
             return nxt
@@ -543,6 +547,50 @@ def goals_list():
     )
 
 
+@bp.route("/tasks")
+@login_required
+def tasks_list():
+    """Every open task and every open strategy step, for both people,
+    grouped by person (the template labels the three groups Shannon/Asha/
+    Unassigned — there's no separate display-name column, just role:
+    owner=Shannon, member=Asha, matching how the rest of this app's own
+    comments already refer to the two of them). Both people see every
+    group; a tick button is shown only where the existing per-item
+    permission check already allows it for the viewer — reusing
+    can_toggle_task/can_toggle_strategy_step exactly as the goal/strategy
+    detail pages do, not a new rule. Completed items are excluded here in
+    Python (no is-done filter exists at the SQL layer, and there's no need
+    for one at this size)."""
+    conn = get_conn()
+    goals_by_id = {g["id"]: g for g in goals_store.list_goals(conn)}
+    strategies_by_id = {s["id"]: s for s in strategies_store.list_strategies(conn)}
+    users = {u["id"]: u for u in goals_store.list_users(conn)}
+
+    def group_key(assignee_user_id):
+        u = users.get(assignee_user_id)
+        return u["role"] if u else "unassigned"
+
+    groups = {"owner": [], "member": [], "unassigned": []}
+
+    for t in goals_store.list_tasks(conn):
+        if t["done"]:
+            continue
+        groups[group_key(t["assignee_user_id"])].append({
+            "kind": "task", "item": t, "goal": goals_by_id.get(t["goal_id"]),
+            "can_toggle": can_toggle_task(current_user.role, int(current_user.id), t["assignee_user_id"]),
+        })
+
+    for s in strategies_store.list_strategy_steps_all(conn):
+        if s["done"]:
+            continue
+        groups[group_key(s["assignee_user_id"])].append({
+            "kind": "step", "item": s, "strategy": strategies_by_id.get(s["strategy_id"]),
+            "can_toggle": can_toggle_strategy_step(current_user.role, int(current_user.id), s["assignee_user_id"]),
+        })
+
+    return render_template("tasks_list.html", user=current_user, groups=groups)
+
+
 @bp.route("/goals/new")
 @owner_required
 def new_goal():
@@ -757,6 +805,11 @@ def create_strategy():
         abort(403)
     conn = get_conn()
     fields = _parse_strategy_form(request.form)
+    # Always today's date in Europe/London, regardless of any form value
+    # (there is no last_reviewed_date field on the create form, but a
+    # crafted POST must still be ignored, not just the absent field) —
+    # Shannon, 15 Nov 2026.
+    fields["last_reviewed_date"] = today_in_london()
     source = "shannon" if current_user.role == "owner" else "asha"
     strategy_id = strategies_store.create_strategy(conn, **fields, source=source, user_id=int(current_user.id))
 

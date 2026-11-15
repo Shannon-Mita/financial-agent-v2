@@ -10,6 +10,7 @@ import re
 
 import app.goals_store as goals_store
 import app.strategies_store as strategies_store
+from app.strategy_review import today_in_london
 from app.vendor_path import ensure_on_path
 
 ensure_on_path()
@@ -73,6 +74,46 @@ def test_owner_created_strategy_has_source_shannon(client, pg_conn, owner_user_i
     page = client.get("/strategies/new")
     client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
     assert strategies_store.list_strategies(pg_conn)[0]["source"] == "shannon"
+
+
+# ── Create always sets last_reviewed_date to today, ignoring any form
+# value (Shannon, 15 Nov 2026) ───────────────────────────────────────────
+
+def test_create_strategy_sets_last_reviewed_date_to_today(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy = strategies_store.list_strategies(pg_conn)[0]
+    assert str(strategy["last_reviewed_date"]) == today_in_london().isoformat()
+
+
+def test_create_strategy_ignores_a_crafted_last_reviewed_date_form_value(client, pg_conn, owner_user_id):
+    # The create form has no last_reviewed_date field at all (strategy_form.html
+    # gates it to the edit case only), but a crafted POST could still send
+    # one — the route must ignore it, not just omit it from the rendered form.
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(
+        last_reviewed_date="2020-01-01", csrf_token=token(page),
+    ))
+    strategy = strategies_store.list_strategies(pg_conn)[0]
+    assert str(strategy["last_reviewed_date"]) == today_in_london().isoformat()
+
+
+def test_new_strategy_form_has_no_last_reviewed_date_field(client, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new").data.decode()
+    assert 'name="last_reviewed_date"' not in page
+
+
+def test_edit_strategy_form_still_has_the_last_reviewed_date_field(client, pg_conn, owner_user_id):
+    # Edit behaviour is unchanged by this fix — still a real, editable field.
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    edit_page = client.get(f"/strategies/{strategy_id}/edit").data.decode()
+    assert 'name="last_reviewed_date"' in edit_page
 
 
 # ── Edit: both allowed, including editing each other's ──────────────────
@@ -280,10 +321,31 @@ def test_strategy_card_shows_status_and_risks_childcare_eligibility(client, pg_c
     assert "risks childcare eligibility" in body.lower() or "childcare" in body.lower()
 
 
-def test_strategy_card_shows_stale_badge_when_never_reviewed(client, pg_conn, owner_user_id):
+def test_strategy_card_not_stale_right_after_creation(client, pg_conn, owner_user_id):
+    # Task 2: create always sets last_reviewed_date to today, so a brand
+    # new strategy is never stale — supersedes the old
+    # "never reviewed is stale on creation" expectation below.
     login(client, owner_user_id)
     page = client.get("/strategies/new")
-    client.post("/strategies", data=basic_strategy_form(title="Needs review", csrf_token=token(page)))
+    client.post("/strategies", data=basic_strategy_form(title="Fresh", csrf_token=token(page)))
+    body = client.get("/goals").data.decode()
+    assert 'class="badge stale"' not in body
+
+
+def test_strategy_card_shows_stale_badge_when_never_reviewed(client, pg_conn, owner_user_id):
+    # The create ROUTE always sets last_reviewed_date now (task 2), so a
+    # genuinely NULL last_reviewed_date only happens via a path that
+    # bypasses it — e.g. scripts/seed_strategies.py importing the
+    # worksheet's pre-existing strategies. Exercised directly at the store
+    # level here to keep the template's "never reviewed -> stale" render
+    # path covered.
+    strategies_store.create_strategy(
+        pg_conn, title="Needs review", detail="", area="Business", status="idea",
+        work_lives_in="here", source="shannon",
+        effect_on_net_worth=None, effect_on_passive_income=None,
+        risks_childcare_eligibility="unknown", from_when=None, user_id=owner_user_id,
+    )
+    login(client, owner_user_id)
     body = client.get("/goals").data.decode()
     assert 'class="badge stale"' in body
 

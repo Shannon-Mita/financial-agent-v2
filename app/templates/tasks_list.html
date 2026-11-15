@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Tasks{% endblock %}
+{% block content %}
+  <h1>Tasks</h1>
+
+  {% macro entry_row(entry) %}
+  <div class="card task">
+    {% if entry.can_toggle %}
+    <form method="post" action="{{ url_for('routes.toggle_task', task_id=entry.item.id) if entry.kind == 'task' else url_for('routes.toggle_strategy_step', step_id=entry.item.id) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('routes.tasks_list') }}">
+      <button type="submit" class="small">Done</button>
+    </form>
+    {% endif %}
+    <label>
+      {{ entry.item.title }}
+      {% if entry.kind == "task" %}
+        {% if entry.goal %}
+        <span class="caveat">Goal: <a href="{{ url_for('routes.goal_detail', goal_id=entry.goal.id) }}">{{ entry.goal.title }}</a></span>
+        {% else %}
+        <span class="caveat">No goal</span>
+        {% endif %}
+      {% else %}
+        <span class="caveat">Strategy: <a href="{{ url_for('routes.strategy_detail', strategy_id=entry.strategy.id) }}">{{ entry.strategy.title }}</a></span>
+      {% endif %}
+    </label>
+  </div>
+  {% endmacro %}
+
+  {% for group_key, label in (("owner", "Shannon"), ("member", "Asha"), ("unassigned", "Unassigned")) %}
+  <h2>{{ label }}</h2>
+  <div class="card-grid">
+    {% for entry in groups[group_key] %}
+    <div class="grid-cell">{{ entry_row(entry) }}</div>
+    {% endfor %}
+  </div>
+  {% if not groups[group_key] %}<p class="readonly-note">None.</p>{% endif %}
+  {% endfor %}
+{% endblock %}
