@@ -8,13 +8,14 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from datetime import date
+from urllib.parse import urlsplit
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from werkzeug.exceptions import MethodNotAllowed, NotFound
 from werkzeug.routing import RequestRedirect
 
-from . import decision_log_store, goals_store, strategies_store, vendor_path  # noqa: F401
+from . import decision_log_store, goals_store, strategies_store, strategy_notes_store, vendor_path  # noqa: F401
 from facts_layer import Fact, Source, Unit, check_freshness
 
 from .db import get_conn
@@ -33,6 +34,7 @@ from .permissions import (
     CREATABLE_FACT_KEYS,
     FACT_BACKED_TARGET_DATE_KEYS,
     FACT_BACKED_TARGET_VALUE_KEYS,
+    can_add_note,
     can_archive_or_delete_strategy,
     can_create_fact,
     can_create_task,
@@ -836,14 +838,28 @@ def strategy_detail(strategy_id):
     levers = strategies_store.list_strategy_levers(conn, strategy_id)
     steps = strategies_store.list_strategy_steps(conn, strategy_id)
     users = {u["id"]: u for u in goals_store.list_users(conn)}
+
+    all_notes = strategy_notes_store.list_notes_for_strategy(conn, strategy_id)
+    strategy_notes = [n for n in all_notes if n["step_id"] is None]
+    notes_by_step = defaultdict(list)
+    for n in all_notes:
+        if n["step_id"] is not None:
+            notes_by_step[n["step_id"]].append(n)
+
+    linked_decisions = decision_log_store.list_decisions_for_strategy(conn, strategy_id)
+
     return render_template(
         "strategy_detail.html", user=current_user, strategy=strategy,
         linked_goals=linked_goals, levers=levers, steps=steps, users=users,
+        strategy_notes=strategy_notes, notes_by_step=notes_by_step,
+        linked_decisions=linked_decisions,
         can_edit=can_edit_strategy(current_user.role),
+        can_add_note=can_add_note(current_user.role),
         can_archive_or_delete=can_archive_or_delete_strategy(current_user.role),
         can_toggle_step=lambda step: can_toggle_strategy_step(
             current_user.role, int(current_user.id), step["assignee_user_id"]
         ),
+        can_delete_step=lambda step: can_edit_strategy(current_user.role) and step["id"] not in notes_by_step,
     )
 
 
@@ -914,6 +930,19 @@ def archive_strategy(strategy_id):
     return redirect(url_for("routes.goals_list"))
 
 
+def _strategy_delete_blocked_reason(conn, strategy_id: int) -> str | None:
+    """None if the strategy may be deleted; otherwise the clear message to
+    show instead of the Delete button. RESTRICT FKs (migrations/
+    005_strategy_notes.sql) would otherwise surface as a raw FK-violation —
+    this is the app-level pre-check so the user sees "archive it instead"
+    rather than an exception (Shannon, 16 Nov 2026)."""
+    if strategy_notes_store.strategy_has_notes(conn, strategy_id):
+        return "This strategy has notes — archive it instead."
+    if decision_log_store.strategy_has_linked_decisions(conn, strategy_id):
+        return "This strategy has a decision linked to it — archive it instead."
+    return None
+
+
 @bp.route("/strategies/<int:strategy_id>/delete-confirm")
 @owner_required
 def strategy_delete_confirm(strategy_id):
@@ -922,7 +951,11 @@ def strategy_delete_confirm(strategy_id):
     if strategy is None:
         abort(404)
     steps = strategies_store.list_strategy_steps(conn, strategy_id)
-    return render_template("strategy_delete_confirm.html", user=current_user, strategy=strategy, steps=steps)
+    blocked_reason = _strategy_delete_blocked_reason(conn, strategy_id)
+    return render_template(
+        "strategy_delete_confirm.html", user=current_user, strategy=strategy, steps=steps,
+        blocked_reason=blocked_reason,
+    )
 
 
 @bp.route("/strategies/<int:strategy_id>/delete", methods=["POST"])
@@ -931,6 +964,9 @@ def delete_strategy(strategy_id):
     conn = get_conn()
     if strategies_store.get_strategy(conn, strategy_id) is None:
         abort(404)
+    blocked_reason = _strategy_delete_blocked_reason(conn, strategy_id)
+    if blocked_reason:
+        abort(400, description=blocked_reason)
     strategies_store.delete_strategy(conn, strategy_id, user_id=int(current_user.id))
     return redirect(url_for("routes.goals_list"))
 
@@ -990,6 +1026,8 @@ def delete_strategy_step(step_id):
     step = strategies_store.get_strategy_step(conn, step_id)
     if step is None:
         abort(404)
+    if strategy_notes_store.step_has_notes(conn, step_id):
+        abort(400, description="This step has notes — archive the strategy instead.")
     strategies_store.delete_strategy_step(conn, step_id)
     return redirect(_safe_next("routes.strategy_detail", strategy_id=step["strategy_id"]))
 
@@ -1005,6 +1043,60 @@ def toggle_strategy_step(step_id):
         abort(403)
     strategies_store.toggle_strategy_step(conn, step_id, not step["done"], int(current_user.id))
     return redirect(_safe_next("routes.strategy_detail", strategy_id=step["strategy_id"]))
+
+
+# ── Strategy notes (notes & context feature) — append-only; both people
+# may add a note to any strategy or step; nobody may edit or delete, no
+# such route exists (Shannon, 16 Nov 2026) ──────────────────────────────
+
+NOTE_BODY_MAX_LEN = 10_000
+NOTE_LINK_MAX_LEN = 2_048
+
+
+def _validate_note_link(raw: str | None) -> str | None:
+    """None = no link. Otherwise must be a well-formed https:// URL with a
+    real host (Shannon, 16 Nov 2026) — not just a 'https://' prefix check,
+    which would let 'https:///no-host' or 'https://' alone through."""
+    link = (raw or "").strip()
+    if not link:
+        return None
+    if len(link) > NOTE_LINK_MAX_LEN:
+        abort(400, description=f"Link is too long (max {NOTE_LINK_MAX_LEN:,} characters).")
+    parsed = urlsplit(link)
+    if parsed.scheme != "https" or not parsed.hostname:
+        abort(400, description="Link must be a well-formed https:// URL with a real host.")
+    return link
+
+
+@bp.route("/strategies/<int:strategy_id>/notes", methods=["POST"])
+@login_required
+def create_strategy_note(strategy_id):
+    if not can_add_note(current_user.role):
+        abort(403)
+    conn = get_conn()
+    if strategies_store.get_strategy(conn, strategy_id) is None:
+        abort(404)
+
+    step_id_raw = request.form.get("step_id")
+    step_id = int(step_id_raw) if step_id_raw else None
+    if step_id is not None:
+        step = strategies_store.get_strategy_step(conn, step_id)
+        if step is None or step["strategy_id"] != strategy_id:
+            abort(400, description="That step does not belong to this strategy.")
+
+    body = (request.form.get("body") or "").strip()
+    if not body:
+        abort(400, description="Missing note body")
+    if len(body) > NOTE_BODY_MAX_LEN:
+        abort(400, description=f"Note is too long (max {NOTE_BODY_MAX_LEN:,} characters).")
+
+    link = _validate_note_link(request.form.get("link"))
+
+    strategy_notes_store.create_note(
+        conn, strategy_id=strategy_id, step_id=step_id, body=body, link=link,
+        user_id=int(current_user.id),
+    )
+    return redirect(_safe_next("routes.strategy_detail", strategy_id=strategy_id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1121,8 +1213,11 @@ def decisions_list():
     conn = get_conn()
     decisions = decision_log_store.list_decisions(conn)
     users = {u["id"]: u for u in goals_store.list_users(conn)}
+    strategies = strategies_store.list_strategies(conn)
+    strategies_by_id = {s["id"]: s for s in strategies}
     return render_template(
         "decisions_list.html", user=current_user, decisions=decisions, users=users,
+        strategies=strategies, strategies_by_id=strategies_by_id,
         today=date.today().isoformat(),
     )
 
@@ -1132,5 +1227,11 @@ def decisions_list():
 def create_decision():
     fields = _parse_decision_form(request.form)
     conn = get_conn()
-    decision_log_store.create_decision(conn, **fields, user_id=int(current_user.id))
+    strategy_id_raw = request.form.get("strategy_id")
+    strategy_id = None
+    if strategy_id_raw:
+        strategy_id = int(strategy_id_raw)
+        if strategies_store.get_strategy(conn, strategy_id) is None:
+            abort(400, description="Unknown strategy_id")
+    decision_log_store.create_decision(conn, **fields, strategy_id=strategy_id, user_id=int(current_user.id))
     return redirect(url_for("routes.decisions_list"))

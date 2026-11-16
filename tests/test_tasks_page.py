@@ -149,6 +149,36 @@ def test_member_sees_every_open_item_even_items_she_cant_tick(client, pg_conn, o
     assert "Owner-only visible" in body
 
 
+# ── UI: plain vertical list, not a grid of cards (Shannon, 16 Nov 2026) ──
+
+def test_tasks_page_is_a_plain_list_not_a_card_grid(client, pg_conn, owner_user_id):
+    goals_store.create_task(
+        pg_conn, title="Some task", goal_id=None, assignee_user_id=owner_user_id, user_id=owner_user_id,
+    )
+    login(client, owner_user_id)
+    body = client.get("/tasks").data.decode()
+    assert "card-grid" not in body
+    assert "grid-cell" not in body
+
+
+def test_tasks_page_row_shows_done_button_title_then_link_beneath(client, pg_conn, owner_user_id):
+    goal_id = goals_store.create_goal(
+        pg_conn, title="House deposit", type="binary", target_value=None, target_date=None,
+        source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
+        cadence_period=None, cadence_amount=None, parent_id=None,
+        assignee_user_ids=[owner_user_id], user_id=owner_user_id,
+    )
+    goals_store.create_task(
+        pg_conn, title="Some task", goal_id=goal_id, assignee_user_id=owner_user_id, user_id=owner_user_id,
+    )
+    login(client, owner_user_id)
+    body = client.get("/tasks").data.decode()
+    title_idx = body.index("Some task")
+    goal_link_idx = body.index("House deposit")
+    done_button_idx = body.rindex(">Done<", 0, title_idx)
+    assert done_button_idx < title_idx < goal_link_idx
+
+
 # ── Permission tests for Asha (member): tick buttons only on her own ────
 
 def test_member_tick_buttons_only_on_her_own_task_and_step(client, pg_conn, owner_user_id, member_user_id):

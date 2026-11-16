@@ -6,7 +6,10 @@ import importlib
 import json
 import os
 
+import app.decision_log_store as decision_log_store
 import app.goals_store as goals_store
+import app.strategies_store as strategies_store
+import app.strategy_notes_store as strategy_notes_store
 from scripts.export_data import TABLES, export_all
 
 
@@ -61,6 +64,29 @@ def test_export_includes_rows_from_every_table(pg_conn, owner_user_id, member_us
     # create_goal + create_task each write a 'created' audit_log row.
     assert len(data["audit_log"]) == 2
     assert {r["event_type"] for r in data["audit_log"]} == {"created"}
+
+
+def test_export_includes_strategy_notes_and_the_decision_strategy_link(pg_conn, owner_user_id):
+    strategy_id = strategies_store.create_strategy(
+        pg_conn, title="Strategy", detail="", area="Business", status="idea",
+        work_lives_in="here", source="shannon",
+        effect_on_net_worth=None, effect_on_passive_income=None,
+        risks_childcare_eligibility="unknown", from_when=None, user_id=owner_user_id,
+    )
+    note_id = strategy_notes_store.create_note(
+        pg_conn, strategy_id=strategy_id, step_id=None, body="Note", link=None, user_id=owner_user_id,
+    )
+    decision_id = decision_log_store.create_decision(
+        pg_conn, decision_date="2026-11-16", decision="Pursue it", reason="r",
+        assumptions="", strategy_id=strategy_id, user_id=owner_user_id,
+    )
+
+    data = export_all(pg_conn)
+
+    assert len(data["strategy_notes"]) == 1
+    assert data["strategy_notes"][0]["id"] == note_id
+    assert data["strategy_notes"][0]["strategy_id"] == strategy_id
+    assert [d for d in data["decision_log"] if d["id"] == decision_id][0]["strategy_id"] == strategy_id
 
 
 def test_export_writes_a_file_with_correct_row_counts(pg_conn, owner_user_id, monkeypatch, capsys):

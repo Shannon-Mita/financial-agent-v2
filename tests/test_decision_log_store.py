@@ -5,6 +5,16 @@ as app/goals_store.py's create_goal). Needs a real Postgres (skips without
 TEST_DATABASE_URL).
 """
 import app.decision_log_store as decision_log_store
+import app.strategies_store as strategies_store
+
+
+def _make_strategy(pg_conn, owner_user_id, title="Strategy"):
+    return strategies_store.create_strategy(
+        pg_conn, title=title, detail="", area="Business", status="idea",
+        work_lives_in="here", source="shannon",
+        effect_on_net_worth=None, effect_on_passive_income=None,
+        risks_childcare_eligibility="unknown", from_when=None, user_id=owner_user_id,
+    )
 
 
 def test_create_decision_returns_an_id(pg_conn, owner_user_id):
@@ -78,3 +88,57 @@ def test_list_decisions_includes_both_people(pg_conn, owner_user_id, member_user
     )
     decisions = decision_log_store.list_decisions(pg_conn)
     assert {d["created_by_user_id"] for d in decisions} == {owner_user_id, member_user_id}
+
+
+# ── Optional strategy link ───────────────────────────────────────────────
+
+def test_create_decision_without_a_strategy_link_defaults_to_none(pg_conn, owner_user_id):
+    decision_id = decision_log_store.create_decision(
+        pg_conn, decision_date="2026-11-02", decision="Decision", reason="Reason",
+        assumptions="", user_id=owner_user_id,
+    )
+    decision = [d for d in decision_log_store.list_decisions(pg_conn) if d["id"] == decision_id][0]
+    assert decision["strategy_id"] is None
+
+
+def test_create_decision_can_link_a_strategy(pg_conn, owner_user_id):
+    strategy_id = _make_strategy(pg_conn, owner_user_id)
+    decision_id = decision_log_store.create_decision(
+        pg_conn, decision_date="2026-11-02", decision="Pursue it", reason="Looks promising",
+        assumptions="", strategy_id=strategy_id, user_id=owner_user_id,
+    )
+    decision = [d for d in decision_log_store.list_decisions(pg_conn) if d["id"] == decision_id][0]
+    assert decision["strategy_id"] == strategy_id
+
+
+def test_strategy_has_linked_decisions_is_false_with_none(pg_conn, owner_user_id):
+    strategy_id = _make_strategy(pg_conn, owner_user_id)
+    assert decision_log_store.strategy_has_linked_decisions(pg_conn, strategy_id) is False
+
+
+def test_strategy_has_linked_decisions_is_true_once_one_links_it(pg_conn, owner_user_id):
+    strategy_id = _make_strategy(pg_conn, owner_user_id)
+    decision_log_store.create_decision(
+        pg_conn, decision_date="2026-11-02", decision="Pursue it", reason="Looks promising",
+        assumptions="", strategy_id=strategy_id, user_id=owner_user_id,
+    )
+    assert decision_log_store.strategy_has_linked_decisions(pg_conn, strategy_id) is True
+
+
+def test_list_decisions_for_strategy_returns_only_that_strategys_decisions(pg_conn, owner_user_id):
+    strategy_id = _make_strategy(pg_conn, owner_user_id, title="A")
+    other_strategy_id = _make_strategy(pg_conn, owner_user_id, title="B")
+    linked = decision_log_store.create_decision(
+        pg_conn, decision_date="2026-11-02", decision="About A", reason="r",
+        assumptions="", strategy_id=strategy_id, user_id=owner_user_id,
+    )
+    decision_log_store.create_decision(
+        pg_conn, decision_date="2026-11-02", decision="About B", reason="r",
+        assumptions="", strategy_id=other_strategy_id, user_id=owner_user_id,
+    )
+    decision_log_store.create_decision(
+        pg_conn, decision_date="2026-11-02", decision="Unrelated", reason="r",
+        assumptions="", user_id=owner_user_id,
+    )
+    result = decision_log_store.list_decisions_for_strategy(pg_conn, strategy_id)
+    assert [d["id"] for d in result] == [linked]

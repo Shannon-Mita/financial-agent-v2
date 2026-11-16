@@ -801,3 +801,29 @@ def test_goals_list_task_delete_links_to_confirm_page(client, pg_conn, owner_use
     body = client.get("/goals").data.decode()
     assert f'href="/tasks/{task_id}/delete-confirm"' in body
     assert f'action="/tasks/{task_id}/delete"' not in body
+
+
+# ── UI proposal items (Shannon, 16 Nov 2026) ──────────────────────────────
+
+def test_goal_form_assignee_checkboxes_are_one_per_line(client, owner_user_id, member_user_id):
+    login(client, owner_user_id)
+    body = client.get("/goals/new").data.decode()
+    assert body.count('class="checkbox-row"') == 2
+
+
+def test_goal_detail_top_card_is_width_capped(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    goal_id = goals_store.create_goal(
+        pg_conn, title="House deposit", type="binary", target_value=None, target_date=None,
+        source_fact_key=None, target_date_fact_key=None, progress_fact_keys=None,
+        cadence_period=None, cadence_amount=None, parent_id=None,
+        assignee_user_ids=[owner_user_id], user_id=owner_user_id,
+    )
+    body = client.get(f"/goals/{goal_id}").data.decode()
+    assert 'class="card card-narrow"' in body
+
+
+def test_goals_list_surplus_card_is_width_capped(client, owner_user_id):
+    login(client, owner_user_id)
+    body = client.get("/goals").data.decode()
+    assert 'class="card card-narrow"' in body

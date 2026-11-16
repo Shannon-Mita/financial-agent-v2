@@ -7,6 +7,7 @@ without TEST_DATABASE_URL).
 import re
 
 import app.decision_log_store as decision_log_store
+import app.strategies_store as strategies_store
 
 TOKEN_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
@@ -136,3 +137,96 @@ def test_decisions_link_is_in_the_top_nav(client, pg_conn, owner_user_id):
     login(client, owner_user_id)
     body = client.get("/goals").data.decode()
     assert 'href="/decisions"' in body
+
+
+# ── Optional strategy link (notes & context feature) ─────────────────────
+
+def _make_strategy(pg_conn, owner_user_id, **overrides):
+    fields = dict(
+        title="Strategy", detail="", area="Business", status="idea",
+        work_lives_in="here", source="shannon",
+        effect_on_net_worth=None, effect_on_passive_income=None,
+        risks_childcare_eligibility="unknown", from_when=None, user_id=owner_user_id,
+    )
+    fields.update(overrides)
+    return strategies_store.create_strategy(pg_conn, **fields)
+
+
+def test_decision_can_be_linked_to_a_strategy(client, pg_conn, owner_user_id):
+    strategy_id = _make_strategy(pg_conn, owner_user_id)
+    login(client, owner_user_id)
+    page = client.get("/decisions")
+    resp = client.post("/decisions", data=basic_decision_form(
+        strategy_id=str(strategy_id), csrf_token=token(page),
+    ))
+    assert resp.status_code == 302
+    assert decision_log_store.list_decisions(pg_conn)[0]["strategy_id"] == strategy_id
+
+
+def test_decision_strategy_link_is_optional(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/decisions")
+    resp = client.post("/decisions", data=basic_decision_form(csrf_token=token(page)))
+    assert resp.status_code == 302
+    assert decision_log_store.list_decisions(pg_conn)[0]["strategy_id"] is None
+
+
+def test_decision_can_link_an_archived_strategy(client, pg_conn, owner_user_id):
+    strategy_id = _make_strategy(pg_conn, owner_user_id)
+    strategies_store.archive_strategy(
+        pg_conn, strategy_id, reason="No longer relevant", archived_date="2026-11-10", user_id=owner_user_id,
+    )
+    login(client, owner_user_id)
+    page = client.get("/decisions")
+    resp = client.post("/decisions", data=basic_decision_form(
+        strategy_id=str(strategy_id), csrf_token=token(page),
+    ))
+    assert resp.status_code == 302
+    assert decision_log_store.list_decisions(pg_conn)[0]["strategy_id"] == strategy_id
+
+
+def test_decision_with_a_nonexistent_strategy_id_is_rejected(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/decisions")
+    resp = client.post("/decisions", data=basic_decision_form(
+        strategy_id="999999", csrf_token=token(page),
+    ))
+    assert resp.status_code == 400
+    assert decision_log_store.list_decisions(pg_conn) == []
+
+
+def test_member_can_also_link_a_strategy_to_her_decision(client, pg_conn, owner_user_id, member_user_id):
+    strategy_id = _make_strategy(pg_conn, owner_user_id)
+    login(client, member_user_id)
+    page = client.get("/decisions")
+    resp = client.post("/decisions", data=basic_decision_form(
+        strategy_id=str(strategy_id), csrf_token=token(page),
+    ))
+    assert resp.status_code == 302
+    assert decision_log_store.list_decisions(pg_conn)[0]["strategy_id"] == strategy_id
+
+
+def test_decisions_add_form_has_a_strategy_dropdown(client, pg_conn, owner_user_id):
+    _make_strategy(pg_conn, owner_user_id, title="New role — Shannon")
+    login(client, owner_user_id)
+    body = client.get("/decisions").data.decode()
+    assert 'name="strategy_id"' in body
+    assert "New role — Shannon" in body
+
+
+def test_decision_entries_are_width_capped(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/decisions")
+    client.post("/decisions", data=basic_decision_form(csrf_token=token(page)))
+    body = client.get("/decisions").data.decode()
+    assert 'class="card card-narrow"' in body
+
+
+def test_decision_linked_to_a_strategy_shows_the_strategy_on_the_list(client, pg_conn, owner_user_id):
+    strategy_id = _make_strategy(pg_conn, owner_user_id, title="New role — Shannon")
+    login(client, owner_user_id)
+    page = client.get("/decisions")
+    client.post("/decisions", data=basic_decision_form(strategy_id=str(strategy_id), csrf_token=token(page)))
+    body = client.get("/decisions").data.decode()
+    assert f'href="/strategies/{strategy_id}"' in body
+    assert "New role — Shannon" in body

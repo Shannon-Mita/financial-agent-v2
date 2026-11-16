@@ -75,10 +75,12 @@
 
     <label class="field-label">Assignees</label>
     {% for u in users %}
-    <label>
-      <input type="checkbox" name="assignee_user_ids" value="{{ u.id }}"
-        {% if goal and u.id in goal.assignee_user_ids %}checked{% endif %}> {{ u.email }}
-    </label>
+    <div class="checkbox-row">
+      <label>
+        <input type="checkbox" name="assignee_user_ids" value="{{ u.id }}"
+          {% if goal and u.id in goal.assignee_user_ids %}checked{% endif %}> {{ u.email }}
+      </label>
+    </div>
     {% endfor %}
 
     <button type="submit">{{ "Save changes" if goal else "Create goal" }}</button>

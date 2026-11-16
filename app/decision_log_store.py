@@ -14,7 +14,7 @@ import psycopg2.extras
 
 DECISION_COLUMNS = (
     "id", "decision_date", "decision", "reason", "assumptions",
-    "created_at", "created_by_user_id",
+    "strategy_id", "created_at", "created_by_user_id",
 )
 
 
@@ -48,17 +48,33 @@ def list_decisions(conn) -> list[dict]:
         return [_row_to_dict(r, DECISION_COLUMNS) for r in cur.fetchall()]
 
 
-def create_decision(conn, *, decision_date, decision, reason, assumptions, user_id) -> int:
+def create_decision(conn, *, decision_date, decision, reason, assumptions, user_id, strategy_id=None) -> int:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO decision_log (decision_date, decision, reason, assumptions, created_by_user_id)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id, decision_date, decision, reason, assumptions, created_at, created_by_user_id
+            INSERT INTO decision_log (decision_date, decision, reason, assumptions, strategy_id, created_by_user_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, decision_date, decision, reason, assumptions, strategy_id, created_at, created_by_user_id
             """,
-            (decision_date, decision, reason, assumptions or "", user_id),
+            (decision_date, decision, reason, assumptions or "", strategy_id, user_id),
         )
         entry = _row_to_dict(cur.fetchone(), DECISION_COLUMNS)
     _log(conn, entry["id"], entry, user_id)
     conn.commit()
     return entry["id"]
+
+
+def list_decisions_for_strategy(conn, strategy_id: int) -> list[dict]:
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {', '.join(DECISION_COLUMNS)} FROM decision_log "
+            "WHERE strategy_id = %s ORDER BY decision_date DESC, id DESC",
+            (strategy_id,),
+        )
+        return [_row_to_dict(r, DECISION_COLUMNS) for r in cur.fetchall()]
+
+
+def strategy_has_linked_decisions(conn, strategy_id: int) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM decision_log WHERE strategy_id = %s LIMIT 1", (strategy_id,))
+        return cur.fetchone() is not None

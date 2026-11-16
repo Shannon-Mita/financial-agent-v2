@@ -15,16 +15,27 @@
       <input type="text" name="reason" required>
       <label class="field-label">Assumptions</label>
       <input type="text" name="assumptions">
+      <label class="field-label">Related strategy (optional)</label>
+      <select name="strategy_id">
+        <option value="">— none —</option>
+        {% for s in strategies %}
+        <option value="{{ s.id }}">{{ s.title }}</option>
+        {% endfor %}
+      </select>
       <button type="submit">Add decision</button>
     </form>
   </div>
 
   {% for d in decisions %}
-  <div class="card">
+  <div class="card card-narrow">
     <div class="card-title">{{ d.decision_date.isoformat() }} — {{ d.decision }}</div>
     <div class="row"><span class="label">Reason</span><span>{{ d.reason }}</span></div>
     {% if d.assumptions %}
     <div class="row"><span class="label">Assumptions</span><span>{{ d.assumptions }}</span></div>
+    {% endif %}
+    {% if d.strategy_id and strategies_by_id.get(d.strategy_id) %}
+    <div class="row"><span class="label">Strategy</span>
+      <span><a href="{{ url_for('routes.strategy_detail', strategy_id=d.strategy_id) }}">{{ strategies_by_id[d.strategy_id].title }}</a></span></div>
     {% endif %}
     <div class="row"><span class="label">Added by</span>
       <span>{{ users[d.created_by_user_id].email if users.get(d.created_by_user_id) else "?" }}</span></div>

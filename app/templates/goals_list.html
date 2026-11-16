@@ -8,12 +8,12 @@
   {% endif %}
 
   {% if surplus_display.refused %}
-  <div class="card">
+  <div class="card card-narrow">
     <div class="card-title">Current monthly surplus</div>
     <p class="caveat">Can't compute — missing: {{ surplus_display.missing_keys | join(", ") }}</p>
   </div>
   {% else %}
-  <div class="card">
+  <div class="card card-narrow">
     <div class="card-title">Current monthly surplus</div>
     <div class="row"><span class="label">Surplus</span><span>£{{ "{:,.0f}".format(surplus_display.value) }}/month</span></div>
     {% if surplus_display.caveat %}<p class="caveat">{{ surplus_display.caveat }}</p>{% endif %}

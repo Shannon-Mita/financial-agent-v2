@@ -48,6 +48,21 @@ def pg_conn():
     import psycopg2
 
     conn = psycopg2.connect(url)
+    # audit_log.entity_type is widened by more than one migration now (004,
+    # then 005) — each ALTER re-DROPs and re-ADDs the constraint using only
+    # ITS OWN list, so replaying 004 against a row a previous test already
+    # committed with a value only 005 knows about (e.g. 'strategy_note')
+    # would fail the moment 004's narrower list is re-applied, before 005
+    # ever gets to widen it again. Pre-emptively clearing audit_log (the one
+    # table whose constraint is layered across multiple migrations) avoids
+    # that ordering hazard; every other table's CREATE TABLE IF NOT EXISTS
+    # replay is already a true no-op regardless of existing data.
+    try:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE audit_log RESTART IDENTITY CASCADE")
+        conn.commit()
+    except psycopg2.errors.UndefinedTable:
+        conn.rollback()
     for path in MIGRATION_PATHS:
         run_migration(conn, path)
     with conn.cursor() as cur:
@@ -56,7 +71,7 @@ def pg_conn():
         # append-only guarantee application code relies on.
         cur.execute(
             "TRUNCATE facts, users, goals, goal_assignees, tasks, audit_log, "
-            "strategies, strategy_goal_links, strategy_levers, strategy_steps, "
+            "strategies, strategy_goal_links, strategy_levers, strategy_steps, strategy_notes, "
             "decision_log RESTART IDENTITY CASCADE"
         )
     conn.commit()

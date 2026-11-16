@@ -164,6 +164,15 @@ def can_toggle_task(role: str, user_id: int, assignee_user_id: int | None) -> bo
     return assignee_user_id == user_id
 
 
+def can_add_note(role: str) -> bool:
+    """Both Shannon and Asha may add a note to any strategy or any step of
+    it — notes are append-only history, never gated by ownership or
+    assignment the way editing a task/step is. Deliberately its own
+    function, not a reuse of can_edit_strategy, so a future change to edit
+    rights doesn't silently change note rights too (Shannon, 16 Nov 2026)."""
+    return role in (ROLE_OWNER, ROLE_MEMBER)
+
+
 def can_edit_strategy(role: str) -> bool:
     """Shannon and Asha can both add and edit any strategy, including each
     other's (Shannon, 1 Nov 2026) — the first object in this app where

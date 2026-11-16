@@ -24,16 +24,26 @@ body {
 h1 { font-size: 1.3rem; margin: 0.5rem 0 1rem; }
 h2 { font-size: 1.1rem; margin: 1rem 0 0.5rem; }
 
+/* Numbers page sections (native <details>/<summary> — CSS-only, no JS,
+   CSP-safe): a section opens itself if anything inside it is stale or
+   unconfirmed, stays collapsed if everything's fresh. */
+details > summary { font-size: 1.1rem; font-weight: 700; margin: 1rem 0 0.5rem; cursor: pointer; }
+details > summary:first-child { margin-top: 0; }
+
 a { color: #0a5; text-decoration: none; }
 
 nav {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.85rem;
   margin-bottom: 1rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid #ddd;
 }
-nav a { font-weight: 600; }
+/* Tightened so all 5 links fit one row at a 390px phone width; flex-wrap
+   above is the fallback if they ever don't — whole links drop to a tidy
+   second row, never one link's own text wrapping mid-phrase. */
+nav a { font-weight: 600; font-size: 0.92rem; white-space: nowrap; }
 
 .topbar {
   display: flex;
@@ -55,6 +65,12 @@ nav a { font-weight: 600; }
 }
 
 .card.sub { margin-left: 1rem; border-left: 3px solid #0a5; }
+
+/* Detail/info cards (goal/strategy detail, decision log entries, the
+   Goals page's standalone surplus card) — label:value .row pairs read
+   badly stretched edge-to-edge of the full ~1100px page on desktop; capped
+   so they stay as close together as they already are on mobile. */
+.card-narrow { max-width: 640px; }
 
 .card-title { font-weight: 600; font-size: 1.05rem; margin-bottom: 0.25rem; overflow-wrap: break-word; }
 
@@ -167,6 +183,28 @@ nav a { font-weight: 600; }
 .task label { flex: 1; }
 .task.done label { text-decoration: line-through; color: #999; }
 
+/* A step/task row's action buttons as their own group, separate from the
+   title — so narrow screens can stack them above the title instead of
+   squeezing a long title up against a trailing button. */
+.task-actions { display: flex; gap: 0.5rem; }
+
+.step-notes { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #eee; }
+.note { margin-bottom: 0.5rem; }
+.note:last-child { margin-bottom: 0; }
+.note p { margin: 0.2rem 0; }
+
+@media (max-width: 500px) {
+  .step-card .task { flex-wrap: wrap; }
+  .step-card .task-actions { order: -1; flex-basis: 100%; }
+  .step-card .task label { flex-basis: 100%; }
+}
+
+/* Tasks page: a plain vertical list, not a grid of cards — a divider
+   line between rows instead of per-row card borders. */
+.task-row { padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+.task-row:last-child { border-bottom: none; }
+.task-row .caveat { margin-top: 0.25rem; }
+
 form.inline { display: inline; }
 
 .value-input { width: auto; display: inline-block; margin: 0 0.3rem; }
@@ -181,6 +219,11 @@ input[type="text"], input[type="number"], input[type="date"], select, textarea {
 }
 
 label.field-label { font-weight: 600; font-size: 0.9rem; display: block; margin-top: 0.5rem; }
+
+/* Checkbox lists (strategy's linked goals, goal's assignees) — one per
+   line instead of wrapping inline into an unlabelled run. */
+.checkbox-row { margin: 0.3rem 0; }
+.checkbox-row label { display: block; }
 
 button, input[type="submit"] {
   font-size: 1rem;

@@ -7,7 +7,7 @@
     {% if strategy.stale %}<span class="badge stale">stale</span>{% endif %}
   </h1>
 
-  <div class="card">
+  <div class="card card-narrow">
     <div class="row"><span class="label">Area</span><span>{{ strategy.area }}</span></div>
     <div class="row"><span class="label">Status</span><span>{{ strategy.status or "?" }}</span></div>
     <div class="row"><span class="label">Work lives in</span><span>{{ strategy.work_lives_in or "—" }}</span></div>
@@ -43,6 +43,15 @@
   {% endfor %}
   {% endif %}
 
+  {% if linked_decisions %}
+  <h2>Related decisions</h2>
+  {% for d in linked_decisions %}
+  <div class="card sub">
+    <a href="{{ url_for('routes.decisions_list') }}">{{ d.decision_date.isoformat() }} — {{ d.decision }}</a>
+  </div>
+  {% endfor %}
+  {% endif %}
+
   {% if levers %}
   <h2>Levers</h2>
   {% for l in levers %}
@@ -56,21 +65,36 @@
 
   <h2>Steps</h2>
   {% for s in steps %}
-  <div class="card task{% if s.done %} done{% endif %}">
-    {% if can_toggle_step(s) %}
-    <form method="post" action="{{ url_for('routes.toggle_strategy_step', step_id=s.id) }}" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="next" value="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}">
-      <button type="submit" class="small{% if s.done %} secondary{% endif %}">{{ "Undo" if s.done else "Done" }}</button>
-    </form>
-    {% endif %}
-    <label>{{ s.title }}{% if s.assignee_user_id and users.get(s.assignee_user_id) %} — {{ users[s.assignee_user_id].email }}{% endif %}</label>
-    {% if can_edit %}
-    <form method="post" action="{{ url_for('routes.delete_strategy_step', step_id=s.id) }}" class="inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="next" value="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}">
-      <button type="submit" class="small danger">Delete</button>
-    </form>
+  <div class="card step-card">
+    <div class="task{% if s.done %} done{% endif %}">
+      <div class="task-actions">
+        {% if can_toggle_step(s) %}
+        <form method="post" action="{{ url_for('routes.toggle_strategy_step', step_id=s.id) }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}">
+          <button type="submit" class="small{% if s.done %} secondary{% endif %}">{{ "Undo" if s.done else "Done" }}</button>
+        </form>
+        {% endif %}
+        {% if can_delete_step(s) %}
+        <form method="post" action="{{ url_for('routes.delete_strategy_step', step_id=s.id) }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}">
+          <button type="submit" class="small danger">Delete</button>
+        </form>
+        {% endif %}
+      </div>
+      <label>{{ s.title }}{% if s.assignee_user_id and users.get(s.assignee_user_id) %} — {{ users[s.assignee_user_id].email }}{% endif %}</label>
+    </div>
+    {% if notes_by_step.get(s.id) %}
+    <div class="step-notes">
+      {% for n in notes_by_step[s.id] %}
+      <div class="note">
+        <p>{{ n.body }}</p>
+        {% if n.link %}<p><a href="{{ n.link }}">{{ n.link }}</a></p>{% endif %}
+        <p class="caveat">{{ n.created_at.strftime('%Y-%m-%d') }} — {{ users[n.created_by_user_id].email if users.get(n.created_by_user_id) else "?" }}</p>
+      </div>
+      {% endfor %}
+    </div>
     {% endif %}
   </div>
   {% endfor %}
@@ -93,6 +117,38 @@
         {% endfor %}
       </select>
       <button type="submit">Add step</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <h2>Notes</h2>
+  {% for n in strategy_notes %}
+  <div class="card sub note">
+    <p>{{ n.body }}</p>
+    {% if n.link %}<p><a href="{{ n.link }}">{{ n.link }}</a></p>{% endif %}
+    <p class="caveat">{{ n.created_at.strftime('%Y-%m-%d') }} — {{ users[n.created_by_user_id].email if users.get(n.created_by_user_id) else "?" }}</p>
+  </div>
+  {% endfor %}
+  {% if not strategy_notes %}<p class="readonly-note">No notes yet.</p>{% endif %}
+
+  {% if can_add_note %}
+  <div class="card">
+    <div class="card-title">Add a note</div>
+    <form method="post" action="{{ url_for('routes.create_strategy_note', strategy_id=strategy.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('routes.strategy_detail', strategy_id=strategy.id) }}">
+      <label class="field-label">Note</label>
+      <textarea name="body" required></textarea>
+      <label class="field-label">Link (optional — https only)</label>
+      <input type="url" name="link" placeholder="https://example.com/...">
+      <label class="field-label">About</label>
+      <select name="step_id">
+        <option value="">— this strategy generally —</option>
+        {% for s in steps %}
+        <option value="{{ s.id }}">{{ s.title }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Add note</button>
     </form>
   </div>
   {% endif %}

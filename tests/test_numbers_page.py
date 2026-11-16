@@ -5,6 +5,7 @@ TEST_DATABASE_URL), same as the other route tests.
 """
 import os
 import re
+from datetime import date, timedelta
 
 from app.store import PostgresFactStore
 from app.vendor_path import ensure_on_path
@@ -35,15 +36,22 @@ def test_facts_grouped_under_the_right_headings(client, pg_conn, owner_user_id):
     login(client, owner_user_id)
     body = client.get("/").data.decode()
 
-    for heading in ("Income", "Spending", "Savings and investments", "Pensions", "Property", "Goals", "Other"):
-        assert f">{heading}<" in body, f"missing heading: {heading}"
+    # Headings are now a <summary> with a trailing count, e.g. "Income (1)"
+    # — not a bare "Income" heading (task 3's collapsible-sections change).
+    # "Goals" is excluded here: the only "goal"-category fact seeded above
+    # is goals.fire.target_number, which HIDDEN_KEYS hides outright, so
+    # that group has no rows and never renders at all — a bare ">Goals<"
+    # check used to pass here anyway, but only by coincidence (it was
+    # actually matching the top nav's "Goals" link, not this page).
+    for heading in ("Income", "Spending", "Savings and investments", "Pensions", "Property", "Other"):
+        assert f">{heading} (" in body, f"missing heading: {heading}"
 
     # Each fact appears after its group's heading, not before — a loose
     # check that the grouping is actually wired up, not just all headings
     # present somewhere regardless of content.
-    assert body.index(">Income<") < body.index("income.shannon.paye_salary")
-    assert body.index(">Pensions<") < body.index("pensions.shannon.current_value")
-    assert body.index(">Other<") < body.index("people.shannon.dob")
+    assert body.index(">Income (") < body.index("income.shannon.paye_salary")
+    assert body.index(">Pensions (") < body.index("pensions.shannon.current_value")
+    assert body.index(">Other (") < body.index("people.shannon.dob")
 
 
 def test_friendly_label_shown_with_raw_key_visible_in_small_text(client, pg_conn, owner_user_id):
@@ -90,6 +98,35 @@ def test_app_css_defines_the_responsive_grid_breakpoints():
     assert "grid-template-columns" in css
     assert "@media (min-width: 700px)" in css
     assert "overflow-x: hidden" in css  # no horizontal scroll guard
+
+
+def _nav_rule(css):
+    import re
+
+    m = re.search(r"\bnav\s*\{([^}]*)\}", css)
+    assert m, "no bare `nav { ... }` rule found in app.css"
+    return m.group(1)
+
+
+def test_nav_wraps_whole_links_to_a_second_row_rather_than_wrapping_text_inside_one(client, pg_conn, owner_user_id):
+    """Shannon, 16 Nov 2026: tighten text/spacing so all 5 nav links fit on
+    one line at 390px; if they truly can't, whole links drop to a tidy
+    second row — never a single link's own text wrapping mid-phrase (the
+    old behaviour: nav had no flex-wrap, so an overflowing link's text
+    wrapped internally instead of the nav row growing)."""
+    css_path = os.path.join(os.path.dirname(__file__), "..", "app", "static", "app.css")
+    with open(css_path) as f:
+        css = f.read()
+    nav_rule = _nav_rule(css)
+    assert "flex-wrap: wrap" in nav_rule
+    assert "white-space: nowrap" in css  # on nav a — links never split mid-text
+
+
+def test_nav_still_has_all_five_links(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    body = client.get("/").data.decode()
+    for href in ("/", "/goals", "/tasks", "/decisions", "/confirm-stale"):
+        assert f'href="{href}"' in body
 
 
 # ── Stage 2 Step 2: three new passive income boxes ─────────────────────────
@@ -217,3 +254,38 @@ def test_non_fire_goal_facts_still_render_normally(client, pg_conn, owner_user_i
     login(client, owner_user_id)
     body = client.get("/").data.decode()
     assert "goals.net_worth.target_amount" in body
+
+
+# ── Collapsible sections (Shannon, 16 Nov 2026): open if anything stale or
+# unconfirmed, collapsed if all fresh; every summary shows a count ───────
+
+def test_section_with_only_fresh_items_is_collapsed_with_a_count(client, pg_conn, owner_user_id):
+    store = PostgresFactStore(pg_conn)
+    store.set(
+        Fact.create("income.shannon.paye_salary", 55000, Unit.GBP_PER_YEAR, Source.USER_STATED, "income"),
+        owner="shannon", entered_by_user_id=owner_user_id,
+    )
+    login(client, owner_user_id)
+    body = client.get("/").data.decode()
+    assert re.search(r"<details>\s*<summary>Income \(1\)</summary>", body)
+    assert not re.search(r"<details open>\s*<summary>Income \(1\)</summary>", body)
+
+
+def test_section_with_a_stale_item_is_open_and_shows_the_stale_count(client, pg_conn, owner_user_id):
+    store = PostgresFactStore(pg_conn)
+    store.set(
+        Fact.create(
+            "income.shannon.paye_salary", 55000, Unit.GBP_PER_YEAR, Source.USER_STATED, "income",
+            as_of=date.today() - timedelta(days=500),
+        ),
+        owner="shannon", entered_by_user_id=owner_user_id,
+    )
+    login(client, owner_user_id)
+    body = client.get("/").data.decode()
+    assert re.search(r"<details open>\s*<summary>Income \(1, 1 stale\)</summary>", body)
+
+
+def test_not_yet_set_section_is_always_open_with_a_count(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    body = client.get("/").data.decode()
+    assert re.search(r"<details open>\s*<summary>Not yet set \(\d+\)</summary>", body)

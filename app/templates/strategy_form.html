@@ -60,10 +60,12 @@
 
     <label class="field-label">Linked goals / milestones</label>
     {% for g in goals %}
-    <label>
-      <input type="checkbox" name="goal_ids" value="{{ g.id }}"
-        {% if g.id in linked_goal_ids %}checked{% endif %}> {{ g.title }}
-    </label>
+    <div class="checkbox-row">
+      <label>
+        <input type="checkbox" name="goal_ids" value="{{ g.id }}"
+          {% if g.id in linked_goal_ids %}checked{% endif %}> {{ g.title }}
+      </label>
+    </div>
     {% endfor %}
 
     <fieldset>

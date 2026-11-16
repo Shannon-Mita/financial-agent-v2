@@ -4,7 +4,7 @@
   <p><a href="{{ url_for('routes.goals_list') }}">&larr; All goals</a></p>
   <h1>{{ goal.title }}</h1>
 
-  <div class="card">
+  <div class="card card-narrow">
     <div class="row"><span class="label">Type</span><span>{{ goal.type }}</span></div>
     <div class="row"><span class="label">Status</span>
       <span>{{ goal.status }}{% if goal.status == "done" %} <span class="badge done">done</span>{% endif %}</span></div>

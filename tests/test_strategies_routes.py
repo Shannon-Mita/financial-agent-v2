@@ -8,8 +8,10 @@ real Postgres (skips without TEST_DATABASE_URL).
 """
 import re
 
+import app.decision_log_store as decision_log_store
 import app.goals_store as goals_store
 import app.strategies_store as strategies_store
+import app.strategy_notes_store as strategy_notes_store
 from app.strategy_review import today_in_london
 from app.vendor_path import ensure_on_path
 
@@ -246,6 +248,135 @@ def test_owner_can_delete_a_strategy(client, pg_conn, owner_user_id):
     assert strategies_store.get_strategy(pg_conn, strategy_id) is None
 
 
+# ── Delete blocked by history (notes/linked decisions) — "archive it
+# instead" (Shannon, 16 Nov 2026: RESTRICT FKs mean the DB would otherwise
+# raise a raw FK-violation; the route pre-checks and gives a clear 400) ──
+
+def test_owner_cannot_delete_a_strategy_that_has_a_note(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    strategy_notes_store.create_note(
+        pg_conn, strategy_id=strategy_id, step_id=None, body="Note", link=None, user_id=owner_user_id,
+    )
+
+    resp = client.post(f"/strategies/{strategy_id}/delete", data={"csrf_token": token(client.get("/goals"))})
+    assert resp.status_code == 400
+    assert b"archive" in resp.data.lower()
+    assert strategies_store.get_strategy(pg_conn, strategy_id) is not None
+
+
+def test_owner_cannot_delete_a_strategy_with_a_note_asha_added(client, pg_conn, owner_user_id, member_user_id):
+    # Notes from EITHER person block the delete, not just the owner's own.
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    strategy_notes_store.create_note(
+        pg_conn, strategy_id=strategy_id, step_id=None, body="Asha's note", link=None, user_id=member_user_id,
+    )
+
+    resp = client.post(f"/strategies/{strategy_id}/delete", data={"csrf_token": token(client.get("/goals"))})
+    assert resp.status_code == 400
+    assert strategies_store.get_strategy(pg_conn, strategy_id) is not None
+
+
+def test_owner_cannot_delete_a_strategy_with_a_linked_decision(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    decision_log_store.create_decision(
+        pg_conn, decision_date="2026-11-16", decision="Pursue it", reason="r",
+        assumptions="", strategy_id=strategy_id, user_id=owner_user_id,
+    )
+
+    resp = client.post(f"/strategies/{strategy_id}/delete", data={"csrf_token": token(client.get("/goals"))})
+    assert resp.status_code == 400
+    assert strategies_store.get_strategy(pg_conn, strategy_id) is not None
+
+
+def test_delete_confirm_page_shows_blocked_reason_and_hides_the_delete_button(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    strategy_notes_store.create_note(
+        pg_conn, strategy_id=strategy_id, step_id=None, body="Note", link=None, user_id=owner_user_id,
+    )
+
+    body = client.get(f"/strategies/{strategy_id}/delete-confirm").data.decode()
+    assert "archive" in body.lower()
+    assert "Delete permanently" not in body
+
+
+def test_strategy_with_no_history_still_deletes_and_shows_the_delete_button(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+
+    body = client.get(f"/strategies/{strategy_id}/delete-confirm").data.decode()
+    assert "Delete permanently" in body
+    resp = client.post(f"/strategies/{strategy_id}/delete", data={"csrf_token": token(client.get("/goals"))})
+    assert resp.status_code == 302
+    assert strategies_store.get_strategy(pg_conn, strategy_id) is None
+
+
+def test_owner_cannot_delete_a_step_that_has_a_note(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    step_id = strategies_store.create_strategy_step(
+        pg_conn, strategy_id=strategy_id, title="Step", assignee_user_id=None, user_id=owner_user_id,
+    )
+    strategy_notes_store.create_note(
+        pg_conn, strategy_id=strategy_id, step_id=step_id, body="Note on step", link=None, user_id=owner_user_id,
+    )
+
+    detail_page = client.get(f"/strategies/{strategy_id}")
+    resp = client.post(f"/strategy-steps/{step_id}/delete", data={"csrf_token": token(detail_page)})
+    assert resp.status_code == 400
+    assert strategies_store.get_strategy_step(pg_conn, step_id) is not None
+
+
+def test_step_with_no_notes_still_deletes(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    step_id = strategies_store.create_strategy_step(
+        pg_conn, strategy_id=strategy_id, title="Step", assignee_user_id=None, user_id=owner_user_id,
+    )
+
+    detail_page = client.get(f"/strategies/{strategy_id}")
+    resp = client.post(f"/strategy-steps/{step_id}/delete", data={"csrf_token": token(detail_page)})
+    assert resp.status_code == 302
+    assert strategies_store.get_strategy_step(pg_conn, step_id) is None
+
+
+def test_strategy_detail_hides_delete_button_for_a_step_that_has_notes(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    noted_step_id = strategies_store.create_strategy_step(
+        pg_conn, strategy_id=strategy_id, title="Has a note", assignee_user_id=None, user_id=owner_user_id,
+    )
+    plain_step_id = strategies_store.create_strategy_step(
+        pg_conn, strategy_id=strategy_id, title="No notes", assignee_user_id=None, user_id=owner_user_id,
+    )
+    strategy_notes_store.create_note(
+        pg_conn, strategy_id=strategy_id, step_id=noted_step_id, body="Note", link=None, user_id=owner_user_id,
+    )
+
+    body = client.get(f"/strategies/{strategy_id}").data.decode()
+    assert f'action="/strategy-steps/{plain_step_id}/delete"' in body
+    assert f'action="/strategy-steps/{noted_step_id}/delete"' not in body
+
+
 # ── NULL-vs-zero regression ──────────────────────────────────────────────
 
 def test_blank_effect_fields_store_null_shown_as_question_mark(client, pg_conn, owner_user_id):
@@ -430,3 +561,45 @@ def test_lever_with_known_fact_key_dimension_is_accepted(client, pg_conn, owner_
     levers = strategies_store.list_strategy_levers(pg_conn, strategy_id)
     assert len(levers) == 1
     assert levers[0]["dimension"] == "income.shannon.paye_salary"
+
+
+# ── UI proposal items (Shannon, 16 Nov 2026) ──────────────────────────────
+
+def test_linked_goals_checkboxes_are_one_per_line(client, pg_conn, owner_user_id):
+    goals_store.create_goal(
+        pg_conn, title="Net worth", type="target", target_value=None, target_date=None,
+        source_fact_key="goals.net_worth.target_amount", target_date_fact_key="goals.net_worth.target_date",
+        progress_fact_keys=None, cadence_period=None, cadence_amount=None, parent_id=None,
+        assignee_user_ids=[owner_user_id], user_id=owner_user_id,
+    )
+    goals_store.create_goal(
+        pg_conn, title="Passive income", type="target", target_value=None, target_date=None,
+        source_fact_key="goals.passive_income.target_amount", target_date_fact_key="goals.passive_income.target_date",
+        progress_fact_keys=None, cadence_period=None, cadence_amount=None, parent_id=None,
+        assignee_user_ids=[owner_user_id], user_id=owner_user_id,
+    )
+    login(client, owner_user_id)
+    body = client.get("/strategies/new").data.decode()
+    assert body.count('class="checkbox-row"') == 2
+
+
+def test_strategy_detail_top_card_is_width_capped(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    body = client.get(f"/strategies/{strategy_id}").data.decode()
+    assert 'class="card card-narrow"' in body
+
+
+def test_step_row_groups_action_buttons_separately_from_the_title(client, pg_conn, owner_user_id):
+    login(client, owner_user_id)
+    page = client.get("/strategies/new")
+    client.post("/strategies", data=basic_strategy_form(csrf_token=token(page)))
+    strategy_id = strategies_store.list_strategies(pg_conn)[0]["id"]
+    strategies_store.create_strategy_step(
+        pg_conn, strategy_id=strategy_id, title="Do the thing", assignee_user_id=owner_user_id,
+        user_id=owner_user_id,
+    )
+    body = client.get(f"/strategies/{strategy_id}").data.decode()
+    assert "task-actions" in body

@@ -30,8 +30,9 @@ from datetime import datetime, timezone
 import psycopg2
 
 # Every table in migrations/001_init.sql + 002_goals.sql + 003_strategies.sql
-# + 004_decision_log.sql, in an order that's safe to restore in (parents
-# before the rows that reference them) — see scripts/restore_data.py.
+# + 004_decision_log.sql + 005_strategy_notes.sql, in an order that's safe
+# to restore in (parents before the rows that reference them) — see
+# scripts/restore_data.py.
 # Columns are listed explicitly (not `SELECT *`) so the export's shape is
 # stable even if a column is ever reordered.
 TABLES = {
@@ -67,8 +68,11 @@ TABLES = {
         "id", "strategy_id", "title", "assignee_user_id", "done", "done_at",
         "done_by_user_id", "created_at", "created_by_user_id",
     ),
+    "strategy_notes": (
+        "id", "strategy_id", "step_id", "body", "link", "created_at", "created_by_user_id",
+    ),
     "decision_log": (
-        "id", "decision_date", "decision", "reason", "assumptions",
+        "id", "decision_date", "decision", "reason", "assumptions", "strategy_id",
         "created_at", "created_by_user_id",
     ),
 }
